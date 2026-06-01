@@ -1,0 +1,45 @@
+# Go build/test artifacts.
+.gocache/
+.gocache-check/
+bin/
+dist/
+vendor/
+*.out
+*.prof
+*.test
+*.exe
+coverage.out
+
+# Local environment and runtime files.
+.env
+.env.*
+!.env.example
+*.log
+tmp/
+temp/
+
+# Docker/local tooling state.
+.docker-config/
+docker-compose.override.yml
+postgres-data/
+
+# Local reference documents, not source code.
+*.csv
+*.pdf
+*.xls
+*.xlsx
+
+# Editor and OS metadata.
+.idea/
+.vscode/
+*.iml
+out/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local tools used by this workspace.
+python-embed/
+python-embed.zip
+get-pip.py

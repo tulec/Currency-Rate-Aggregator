@@ -1,0 +1,345 @@
+openapi: 3.0.3
+info:
+  title: Currency Rate Aggregator API
+  version: 1.0.0
+  description: HTTP API for aggregating mock-bank currency rates and reading stored PostgreSQL history.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Health
+  - name: Rates
+  - name: Observability
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Check service health
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                ok:
+                  value:
+                    status: ok
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /rates:
+    get:
+      tags:
+        - Rates
+      summary: Get current aggregated currency rates
+      operationId: getRates
+      parameters:
+        - $ref: "#/components/parameters/CurrencyQuery"
+      responses:
+        "200":
+          description: Best buy/sell rates and all successful source rates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateResult"
+              examples:
+                usd:
+                  value:
+                    currency: USD
+                    best_buy:
+                      currency: USD
+                      buy: 91.2
+                      sell: 92.1
+                      bank: North Bank
+                      fetched_at: "2026-06-01T12:30:44.804111Z"
+                    best_sell:
+                      currency: USD
+                      buy: 91.05
+                      sell: 91.8
+                      bank: Metro Bank
+                      fetched_at: "2026-06-01T12:30:44.804116Z"
+                    sources:
+                      - currency: USD
+                        buy: 91.2
+                        sell: 92.1
+                        bank: North Bank
+                        fetched_at: "2026-06-01T12:30:44.804111Z"
+                      - currency: USD
+                        buy: 91.05
+                        sell: 91.8
+                        bank: Metro Bank
+                        fetched_at: "2026-06-01T12:30:44.804116Z"
+                    updated_at: "2026-06-01T12:30:44.804116Z"
+        "400":
+          description: Missing or invalid currency query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingCurrency:
+                  value:
+                    error: currency query parameter is required
+                invalidCurrency:
+                  value:
+                    error: currency must be a 3-letter code
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "499":
+          $ref: "#/components/responses/RequestCanceled"
+        "503":
+          description: No source returned a usable rate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                noRates:
+                  value:
+                    error: no rates available
+        "504":
+          $ref: "#/components/responses/RequestTimedOut"
+  /rates/history:
+    get:
+      tags:
+        - Rates
+      summary: Get stored rate history
+      operationId: getRateHistory
+      parameters:
+        - $ref: "#/components/parameters/CurrencyQuery"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of history rows. Defaults to 50 and is capped at 500.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+          example: 50
+      responses:
+        "200":
+          description: Recent stored source rates for the requested currency.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CurrencyRate"
+              examples:
+                usdHistory:
+                  value:
+                    - currency: USD
+                      buy: 91.05
+                      sell: 91.8
+                      bank: Metro Bank
+                      fetched_at: "2026-06-01T12:30:44.804116Z"
+                    - currency: USD
+                      buy: 91.2
+                      sell: 92.1
+                      bank: North Bank
+                      fetched_at: "2026-06-01T12:30:44.804111Z"
+        "400":
+          description: Missing/invalid currency or invalid limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidLimit:
+                  value:
+                    error: limit must be a positive integer
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "499":
+          $ref: "#/components/responses/RequestCanceled"
+        "500":
+          description: History store is not configured or history lookup failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                storeMissing:
+                  value:
+                    error: rate history store is not configured
+        "504":
+          $ref: "#/components/responses/RequestTimedOut"
+  /metrics:
+    get:
+      tags:
+        - Observability
+      summary: Get Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus text exposition.
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                metrics:
+                  value: |
+                    http_requests_total{method="GET",path="/health",status="200"} 1
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /debug/pprof/:
+    get:
+      tags:
+        - Observability
+      summary: Get pprof index
+      operationId: getPprofIndex
+      responses:
+        "200":
+          description: Go pprof HTML index.
+          content:
+            text/html:
+              schema:
+                type: string
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+components:
+  parameters:
+    CurrencyQuery:
+      name: currency
+      in: query
+      required: true
+      description: Three-letter ASCII currency code. Input is trimmed and normalized to uppercase.
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 3
+        pattern: "^[A-Za-z]{3}$"
+      example: USD
+  responses:
+    MethodNotAllowed:
+      description: HTTP method is not supported for this route.
+      headers:
+        Allow:
+          description: Allowed methods for the route.
+          schema:
+            type: string
+            example: GET, HEAD
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            methodNotAllowed:
+              value:
+                error: method not allowed
+    RateLimited:
+      description: Per-IP request limit was exceeded.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            example: 60
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            rateLimited:
+              value:
+                error: rate limit exceeded
+    RequestCanceled:
+      description: Client canceled the request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            canceled:
+              value:
+                error: request canceled
+    RequestTimedOut:
+      description: Request exceeded its context deadline.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            timedOut:
+              value:
+                error: request timed out
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ok
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: currency query parameter is required
+    CurrencyRate:
+      type: object
+      required:
+        - currency
+        - buy
+        - sell
+        - bank
+        - fetched_at
+      properties:
+        currency:
+          type: string
+          example: USD
+        buy:
+          type: number
+          format: double
+          example: 91.2
+        sell:
+          type: number
+          format: double
+          example: 92.1
+        bank:
+          type: string
+          example: North Bank
+        fetched_at:
+          type: string
+          format: date-time
+          example: "2026-06-01T12:30:44.804111Z"
+    RateResult:
+      type: object
+      required:
+        - currency
+        - best_buy
+        - best_sell
+        - sources
+        - updated_at
+      properties:
+        currency:
+          type: string
+          example: USD
+        best_buy:
+          $ref: "#/components/schemas/CurrencyRate"
+        best_sell:
+          $ref: "#/components/schemas/CurrencyRate"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/CurrencyRate"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-06-01T12:30:44.804116Z"

@@ -1,0 +1,15 @@
+.git/
+.gocache/
+.docker-config/
+python-embed/
+python-embed.zip
+get-pip.py
+
+*.exe
+*.test
+*.pdf
+
+Dockerfile
+docker-compose.yml
+README.md
+ROADMAP.md

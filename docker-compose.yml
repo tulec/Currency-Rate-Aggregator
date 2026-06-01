@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://currency:currency@postgres:5432/currency_rates?sslmode=disable
+      SCHEDULER_CURRENCIES: USD,EUR
+      SCHEDULER_INTERVAL: 1m
+      CACHE_TTL: 30s
+      RATE_LIMIT_REQUESTS_PER_MINUTE: "60"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: currency
+      POSTGRES_PASSWORD: currency
+      POSTGRES_DB: currency_rates
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U currency -d currency_rates"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
