@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Currency Rate Aggregator API
   version: 1.0.0
-  description: HTTP API for aggregating mock-bank currency rates and reading stored PostgreSQL history.
+  description: HTTP API for aggregating Bank of Russia exchange-rate data, Frankfurter reference rates, T-Bank public JSON rates, optional mock rates, and stored PostgreSQL history.
 servers:
   - url: http://localhost:8080
 tags:
@@ -22,11 +22,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HealthResponse"
+                $ref: "#/components/schemas/HealthResponseEnvelope"
               examples:
                 ok:
                   value:
-                    status: ok
+                    data:
+                      status: ok
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "429":
@@ -45,35 +46,36 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RateResult"
+                $ref: "#/components/schemas/RateResultEnvelope"
               examples:
                 usd:
                   value:
-                    currency: USD
-                    best_buy:
+                    data:
                       currency: USD
-                      buy: 91.2
-                      sell: 92.1
-                      bank: North Bank
-                      fetched_at: "2026-06-01T12:30:44.804111Z"
-                    best_sell:
-                      currency: USD
-                      buy: 91.05
-                      sell: 91.8
-                      bank: Metro Bank
-                      fetched_at: "2026-06-01T12:30:44.804116Z"
-                    sources:
-                      - currency: USD
+                      best_buy:
+                        currency: USD
                         buy: 91.2
                         sell: 92.1
                         bank: North Bank
                         fetched_at: "2026-06-01T12:30:44.804111Z"
-                      - currency: USD
+                      best_sell:
+                        currency: USD
                         buy: 91.05
                         sell: 91.8
                         bank: Metro Bank
                         fetched_at: "2026-06-01T12:30:44.804116Z"
-                    updated_at: "2026-06-01T12:30:44.804116Z"
+                      sources:
+                        - currency: USD
+                          buy: 91.2
+                          sell: 92.1
+                          bank: North Bank
+                          fetched_at: "2026-06-01T12:30:44.804111Z"
+                        - currency: USD
+                          buy: 91.05
+                          sell: 91.8
+                          bank: Metro Bank
+                          fetched_at: "2026-06-01T12:30:44.804116Z"
+                      updated_at: "2026-06-01T12:30:44.804116Z"
         "400":
           description: Missing or invalid currency query parameter.
           content:
@@ -87,6 +89,87 @@ paths:
                 invalidCurrency:
                   value:
                     error: currency must be a 3-letter code
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "499":
+          $ref: "#/components/responses/RequestCanceled"
+        "503":
+          description: No source returned a usable rate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                noRates:
+                  value:
+                    error: no rates available
+        "504":
+          $ref: "#/components/responses/RequestTimedOut"
+  /convert:
+    get:
+      tags:
+        - Rates
+      summary: Convert an amount between currencies
+      operationId: convertCurrency
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Source three-letter currency code.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 3
+            pattern: "^[A-Za-z]{3}$"
+          example: USD
+        - name: to
+          in: query
+          required: true
+          description: Target three-letter currency code.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 3
+            pattern: "^[A-Za-z]{3}$"
+          example: EUR
+        - name: amount
+          in: query
+          required: true
+          description: Positive amount to convert.
+          schema:
+            type: number
+            format: double
+            exclusiveMinimum: true
+            minimum: 0
+          example: 100
+      responses:
+        "200":
+          description: Converted amount. RUB is used as the base currency for cross-currency conversion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversionResponseEnvelope"
+              examples:
+                usdToEur:
+                  value:
+                    data:
+                      from: USD
+                      to: EUR
+                      amount: 100
+                      converted_amount: 91.2
+                      rate: 0.912
+        "400":
+          description: Missing or invalid currency/amount query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidAmount:
+                  value:
+                    error: amount must be a positive number
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "429":
@@ -129,22 +212,21 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CurrencyRate"
+                $ref: "#/components/schemas/CurrencyRateListEnvelope"
               examples:
                 usdHistory:
                   value:
-                    - currency: USD
-                      buy: 91.05
-                      sell: 91.8
-                      bank: Metro Bank
-                      fetched_at: "2026-06-01T12:30:44.804116Z"
-                    - currency: USD
-                      buy: 91.2
-                      sell: 92.1
-                      bank: North Bank
-                      fetched_at: "2026-06-01T12:30:44.804111Z"
+                    data:
+                      - currency: USD
+                        buy: 91.05
+                        sell: 91.8
+                        bank: Metro Bank
+                        fetched_at: "2026-06-01T12:30:44.804116Z"
+                      - currency: USD
+                        buy: 91.2
+                        sell: 92.1
+                        bank: North Bank
+                        fetched_at: "2026-06-01T12:30:44.804111Z"
         "400":
           description: Missing/invalid currency or invalid limit.
           content:
@@ -155,6 +237,85 @@ paths:
                 invalidLimit:
                   value:
                     error: limit must be a positive integer
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "499":
+          $ref: "#/components/responses/RequestCanceled"
+        "500":
+          description: History store is not configured or history lookup failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                storeMissing:
+                  value:
+                    error: rate history store is not configured
+        "504":
+          $ref: "#/components/responses/RequestTimedOut"
+  /rates/history/by-date:
+    get:
+      tags:
+        - Rates
+      summary: Get stored rate history for a date range
+      operationId: getRateHistoryByDate
+      parameters:
+        - $ref: "#/components/parameters/CurrencyQuery"
+        - name: from
+          in: query
+          required: true
+          description: Start of the date range. Accepts YYYY-MM-DD or RFC3339. Date-only values are interpreted as UTC midnight.
+          schema:
+            type: string
+            example: "2026-06-01"
+        - name: to
+          in: query
+          required: true
+          description: End of the date range. Accepts YYYY-MM-DD or RFC3339. Date-only values include the whole day.
+          schema:
+            type: string
+            example: "2026-06-05"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of history rows. Defaults to 50 and is capped at 500.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+          example: 10
+      responses:
+        "200":
+          description: Recent stored source rates for the requested currency and date range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrencyRateListEnvelope"
+              examples:
+                usdHistoryByDate:
+                  value:
+                    data:
+                      - currency: USD
+                        buy: 91.05
+                        sell: 91.8
+                        bank: Metro Bank
+                        fetched_at: "2026-06-02T12:30:44.804116Z"
+        "400":
+          description: Missing/invalid currency, invalid date range, or invalid limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingFrom:
+                  value:
+                    error: from query parameter is required
+                invalidRange:
+                  value:
+                    error: from must be before to
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "429":
@@ -209,6 +370,8 @@ paths:
                 type: string
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
   parameters:
     CurrencyQuery:
@@ -284,6 +447,13 @@ components:
         status:
           type: string
           example: ok
+    HealthResponseEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HealthResponse"
     ErrorResponse:
       type: object
       required:
@@ -292,6 +462,49 @@ components:
         error:
           type: string
           example: currency query parameter is required
+    CurrencyRateListEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CurrencyRate"
+    ConversionResponseEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/ConversionResponse"
+    ConversionResponse:
+      type: object
+      required:
+        - from
+        - to
+        - amount
+        - converted_amount
+        - rate
+      properties:
+        from:
+          type: string
+          example: USD
+        to:
+          type: string
+          example: EUR
+        amount:
+          type: number
+          format: double
+          example: 100
+        converted_amount:
+          type: number
+          format: double
+          example: 91.2
+        rate:
+          type: number
+          format: double
+          example: 0.912
     CurrencyRate:
       type: object
       required:
@@ -343,3 +556,10 @@ components:
           type: string
           format: date-time
           example: "2026-06-01T12:30:44.804116Z"
+    RateResultEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/RateResult"

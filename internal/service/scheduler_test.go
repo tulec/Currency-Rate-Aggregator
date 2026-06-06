@@ -188,7 +188,7 @@ func (f *schedulerFetcher) FetchRates(ctx context.Context, currency string) (dom
 		return domain.RateResult{}, err
 	}
 	if result.Currency == "" {
-		result.Currency = currency
+		result.Currency = domain.CurrencyCode(currency)
 	}
 	return result, nil
 }

@@ -35,3 +35,16 @@ func TestNormalizeCurrency(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeCurrencyCodeReturnsDomainType(t *testing.T) {
+	code, err := NormalizeCurrencyCode(" usd ")
+	if err != nil {
+		t.Fatalf("NormalizeCurrencyCode() error = %v", err)
+	}
+	if code != CurrencyCode("USD") {
+		t.Fatalf("NormalizeCurrencyCode() = %q, want USD", code)
+	}
+	if code.String() != "USD" {
+		t.Fatalf("CurrencyCode.String() = %q, want USD", code.String())
+	}
+}

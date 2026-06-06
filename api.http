@@ -1,0 +1,46 @@
+@baseUrl = http://localhost:8080
+
+### Health check
+GET {{baseUrl}}/health
+Accept: application/json
+
+### Current USD rates
+GET {{baseUrl}}/rates?currency=USD
+Accept: application/json
+
+### Current EUR rates
+GET {{baseUrl}}/rates?currency=EUR
+Accept: application/json
+
+### Convert USD to EUR
+GET {{baseUrl}}/convert?from=USD&to=EUR&amount=100
+Accept: application/json
+
+### Convert USD to RUB
+GET {{baseUrl}}/convert?from=USD&to=RUB&amount=100
+Accept: application/json
+
+### Recent USD history
+# Requires DATABASE_URL and a running PostgreSQL instance.
+GET {{baseUrl}}/rates/history?currency=USD&limit=10
+Accept: application/json
+
+### USD history by date
+# Date-only "to" includes the entire specified day.
+GET {{baseUrl}}/rates/history/by-date?currency=USD&from=2026-06-01&to=2026-06-06&limit=10
+Accept: application/json
+
+### Metrics
+GET {{baseUrl}}/metrics
+Accept: text/plain
+
+### Pprof index
+GET {{baseUrl}}/debug/pprof/
+
+### Validation error example
+GET {{baseUrl}}/rates?currency=USDT
+Accept: application/json
+
+### Method not allowed example
+POST {{baseUrl}}/rates?currency=USD
+Accept: application/json

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -61,6 +63,88 @@ func TestAggregatorFetchRatesReturnsPartialDataWhenBankFails(t *testing.T) {
 	}
 	if len(result.Sources) != 1 {
 		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
+	}
+}
+
+func TestAggregatorFetchRatesAggregatesConfiguredMultipleSources(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cbr.xml":
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ValCurs Date="05.06.2026"><Valute><CharCode>USD</CharCode><Nominal>1</Nominal><Value>70,0000</Value></Valute></ValCurs>`))
+		case "/v2/rate/USD/RUB":
+			_, _ = w.Write([]byte(`{"base":"USD","quote":"RUB","date":"2026-06-05","rate":80}`))
+		case "/tbank/rates":
+			_, _ = w.Write([]byte(`{"resultCode":"OK","payload":{"lastUpdate":{"milliseconds":1780685158794},"rates":[{"category":"DebitCardsTransfers","fromCurrency":{"name":"USD"},"toCurrency":{"name":"RUB"},"buy":72.3,"sell":78.95}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	clients, err := bankclient.NewClients([]string{"cbr", "frankfurter", "tbank", "mock"}, bankclient.SourceOptions{
+		CBRDailyURL:        server.URL + "/cbr.xml",
+		FrankfurterBaseURL: server.URL + "/v2",
+		TBankRatesURL:      server.URL + "/tbank/rates",
+	})
+	if err != nil {
+		t.Fatalf("NewClients() error = %v", err)
+	}
+	aggregator := NewAggregator(clients)
+
+	result, err := aggregator.FetchRates(context.Background(), "USD")
+	if err != nil {
+		t.Fatalf("FetchRates() error = %v", err)
+	}
+
+	if len(result.Sources) != 5 {
+		t.Fatalf("sources = %d, want 5 successful sources", len(result.Sources))
+	}
+	if result.BestBuy.Bank != "North Bank" {
+		t.Fatalf("BestBuy.Bank = %q, want North Bank", result.BestBuy.Bank)
+	}
+	if result.BestSell.Bank != "Bank of Russia" {
+		t.Fatalf("BestSell.Bank = %q, want Bank of Russia", result.BestSell.Bank)
+	}
+}
+
+func TestAggregatorFetchRatesWaitsForSuccessfulBankAfterFailure(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	aggregator := NewAggregator(testClients(
+		testClient{name: "Offline Bank", err: domain.ErrBankUnavailable},
+		testClient{name: "Bank A", rate: domain.CurrencyRate{Currency: "EUR", Bank: "Bank A", Buy: 99.4, Sell: 100.3}, started: started, release: release},
+	))
+
+	done := make(chan error, 1)
+	go func() {
+		result, err := aggregator.FetchRates(context.Background(), "EUR")
+		if err == nil && result.BestBuy.Bank != "Bank A" {
+			err = errors.New("expected Bank A result")
+		}
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for successful bank to start")
+	}
+
+	select {
+	case err := <-done:
+		t.Fatalf("FetchRates() finished before successful bank responded: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	close(release)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("FetchRates() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for FetchRates")
 	}
 }
 
@@ -127,29 +211,6 @@ func TestAggregatorFetchRatesReturnsNoRatesWhenSourcesUseWrongCurrency(t *testin
 	}
 	if !errors.Is(err, errUnexpectedCurrency) {
 		t.Fatalf("FetchRates() error = %v, want errUnexpectedCurrency", err)
-	}
-}
-
-func TestAggregatorFetchRatesReturnsPartialDataWhenBankPanics(t *testing.T) {
-	metrics := newFakeAggregatorMetrics()
-	aggregator := NewAggregator(testClients(
-		testClient{name: "Panic Bank", panicValue: "source bug"},
-		testClient{name: "Bank A", rate: domain.CurrencyRate{Currency: "EUR", Bank: "Bank A", Buy: 99.4, Sell: 100.3}},
-	)).WithMetrics(metrics)
-
-	result, err := aggregator.FetchRates(context.Background(), "EUR")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
-
-	if result.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
-	}
-	if len(result.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
-	}
-	if metrics.bankErrors["Panic Bank"] != 1 {
-		t.Fatalf("bank error metrics = %d, want 1", metrics.bankErrors["Panic Bank"])
 	}
 }
 
@@ -237,24 +298,6 @@ func TestAggregatorFetchRatesReturnsErrorWhenAllBanksFail(t *testing.T) {
 	}
 	if !errors.Is(err, domain.ErrBankUnavailable) {
 		t.Fatalf("FetchRates() error = %v, want ErrBankUnavailable in chain", err)
-	}
-}
-
-func TestAggregatorFetchRatesReturnsErrorWhenAllBanksPanic(t *testing.T) {
-	aggregator := NewAggregator(testClients(
-		testClient{name: "Panic A", panicValue: "source bug"},
-		testClient{name: "Panic B", panicValue: errors.New("nil response")},
-	))
-
-	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, ErrNoRatesAvailable) {
-		t.Fatalf("FetchRates() error = %v, want ErrNoRatesAvailable", err)
-	}
-	if !errors.Is(err, errBankClientPanicked) {
-		t.Fatalf("FetchRates() error = %v, want errBankClientPanicked in chain", err)
-	}
-	if !strings.Contains(err.Error(), "source bug") || !strings.Contains(err.Error(), "nil response") {
-		t.Fatalf("FetchRates() error = %q, want both panic values", err)
 	}
 }
 
@@ -591,7 +634,6 @@ type testClient struct {
 	waitForCtx  bool
 	inFlight    *int32
 	maxInFlight *int32
-	panicValue  any
 }
 
 func testClients(clients ...testClient) []bankclient.BankClient {
@@ -638,15 +680,12 @@ func (c testClient) FetchRate(ctx context.Context, currency string) (domain.Curr
 	if err := ctx.Err(); err != nil {
 		return domain.CurrencyRate{}, err
 	}
-	if c.panicValue != nil {
-		panic(c.panicValue)
-	}
 	if c.err != nil {
 		return domain.CurrencyRate{}, c.err
 	}
 
 	rate := c.rate
-	rate.Currency = currency
+	rate.Currency = domain.CurrencyCode(currency)
 	rate.Bank = c.name
 	return rate, nil
 }

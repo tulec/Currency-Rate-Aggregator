@@ -1,45 +1,64 @@
-# Go build/test artifacts.
-.gocache/
-.gocache-check/
-bin/
-dist/
-vendor/
+# Go build and test artifacts.
+/.gocache/
+/.gocache-*/
+/bin/
+/dist/
+/out/
+/coverage/
+/vendor/
+*.exe
+*.test
 *.out
 *.prof
-*.test
-*.exe
+*.pprof
+*.trace
+*.coverprofile
 coverage.out
+__debug_bin*
 
-# Local environment and runtime files.
+# Temporary runtime files.
+/.tmp/
+/tmp/
+/temp/
+/.smoke-server*
+*.log
+
+# Local environment and secrets.
 .env
 .env.*
 !.env.example
-*.log
-tmp/
-temp/
+*.local
 
-# Docker/local tooling state.
-.docker-config/
+# Docker and local database state.
+/.docker-config/
+/postgres-data/
 docker-compose.override.yml
-postgres-data/
 
-# Local reference documents, not source code.
+# IDE and editor metadata.
+/.idea/
+/.vscode/
+*.iml
+*.swp
+*.swo
+
+# Operating system metadata.
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local reference documents, not project source.
 *.csv
 *.pdf
 *.xls
 *.xlsx
 
-# Editor and OS metadata.
-.idea/
-.vscode/
-*.iml
-out/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
+# Local workspace tools.
+/python-embed/
+/python-embed.zip
+/get-pip.py
 
-# Local tools used by this workspace.
-python-embed/
-python-embed.zip
-get-pip.py
+# Local AI agent instructions and working state.
+/AGENTS.md
+/ROADMAP.md
+/.agents/
+/.codex/

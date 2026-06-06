@@ -21,6 +21,11 @@ const (
 	defaultSchedulerEvery  = time.Minute
 	defaultCurrencies      = "USD,EUR"
 	defaultRateLimitRPM    = 60
+	defaultRateSources     = "cbr"
+	defaultCBRDailyURL     = "https://www.cbr.ru/scripts/XML_daily.asp"
+	defaultFrankfurterURL  = "https://api.frankfurter.dev/v2"
+	defaultTBankRatesURL   = "https://www.tinkoff.ru/api/v1/currency_rates/"
+	defaultTBankCategory   = "DebitCardsTransfers"
 )
 
 type Config struct {
@@ -33,6 +38,11 @@ type Config struct {
 	SchedulerInterval   time.Duration
 	SchedulerCurrencies []string
 	RateLimitRPM        int
+	RateSources         []string
+	CBRDailyURL         string
+	FrankfurterBaseURL  string
+	TBankRatesURL       string
+	TBankRateCategory   string
 }
 
 func Load() (Config, error) {
@@ -78,6 +88,16 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	rateSources, err := envRateSources("RATE_SOURCES", "RATE_SOURCE", defaultRateSources)
+	if err != nil {
+		return Config{}, err
+	}
+
+	cbrDailyURL := envString("CBR_DAILY_URL", defaultCBRDailyURL)
+	frankfurterBaseURL := envString("FRANKFURTER_BASE_URL", defaultFrankfurterURL)
+	tbankRatesURL := envString("TBANK_RATES_URL", defaultTBankRatesURL)
+	tbankRateCategory := envString("TBANK_RATE_CATEGORY", defaultTBankCategory)
+
 	return Config{
 		HTTPAddr:            ":" + port,
 		ReadTimeout:         readTimeout,
@@ -88,6 +108,11 @@ func Load() (Config, error) {
 		SchedulerInterval:   schedulerInterval,
 		SchedulerCurrencies: schedulerCurrencies,
 		RateLimitRPM:        rateLimitRPM,
+		RateSources:         rateSources,
+		CBRDailyURL:         cbrDailyURL,
+		FrankfurterBaseURL:  frankfurterBaseURL,
+		TBankRatesURL:       tbankRatesURL,
+		TBankRateCategory:   tbankRateCategory,
 	}, nil
 }
 
@@ -177,4 +202,35 @@ func envInt(key string, fallback int) (int, error) {
 	}
 
 	return parsed, nil
+}
+
+func envRateSources(key, legacyKey, fallback string) ([]string, error) {
+	value := envString(key, "")
+	if value == "" {
+		value = envString(legacyKey, fallback)
+	}
+
+	parts := strings.Split(value, ",")
+	seen := make(map[string]struct{}, len(parts))
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		source := strings.ToLower(strings.TrimSpace(part))
+		if source == "" {
+			continue
+		}
+		switch source {
+		case "cbr", "frankfurter", "mock", "tbank":
+		default:
+			return nil, fmt.Errorf("%s must contain only cbr, frankfurter, mock, or tbank sources", key)
+		}
+		if _, ok := seen[source]; ok {
+			continue
+		}
+		seen[source] = struct{}{}
+		result = append(result, source)
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("%s must contain at least one source", key)
+	}
+	return result, nil
 }

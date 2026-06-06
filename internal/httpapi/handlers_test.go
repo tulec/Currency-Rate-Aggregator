@@ -3,8 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,10 +29,7 @@ func TestHealthHandler(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want application/json", got)
 	}
 
-	var body healthResponse
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
+	body := decodeResponseData[healthResponse](t, rec)
 	if body.Status != "ok" {
 		t.Fatalf("status body = %q, want ok", body.Status)
 	}
@@ -145,10 +140,7 @@ func TestRatesHandlerReturnsAggregatedRates(t *testing.T) {
 		t.Fatalf("currency passed to fetcher = %q, want USD", fetcher.currency)
 	}
 
-	var body domain.RateResult
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
+	body := decodeResponseData[domain.RateResult](t, rec)
 	if body.Currency != "USD" {
 		t.Fatalf("Currency = %q, want USD", body.Currency)
 	}
@@ -236,6 +228,151 @@ func TestRatesHandlerReturnsClientClosedRequestOnCancellation(t *testing.T) {
 	assertErrorResponse(t, rec, "request canceled")
 }
 
+func TestConvertHandlerConvertsBetweenForeignCurrenciesViaRub(t *testing.T) {
+	fetcher := &fakeRateFetcher{
+		results: map[string]domain.RateResult{
+			"USD": {
+				Currency: "USD",
+				BestBuy:  domain.CurrencyRate{Currency: "USD", Bank: "Bank A", Buy: 90, Sell: 92},
+			},
+			"EUR": {
+				Currency: "EUR",
+				BestSell: domain.CurrencyRate{Currency: "EUR", Bank: "Bank B", Buy: 99, Sell: 100},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/convert?from=usd&to=eur&amount=10", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouter(fetcher, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body := decodeResponseData[conversionResponse](t, rec)
+	if body.From != "USD" || body.To != "EUR" {
+		t.Fatalf("currencies = %s/%s, want USD/EUR", body.From, body.To)
+	}
+	if body.Amount != 10 {
+		t.Fatalf("amount = %v, want 10", body.Amount)
+	}
+	if body.ConvertedAmount != 9 {
+		t.Fatalf("converted amount = %v, want 9", body.ConvertedAmount)
+	}
+	if body.Rate != 0.9 {
+		t.Fatalf("rate = %v, want 0.9", body.Rate)
+	}
+	if strings.Join(fetcher.calls, ",") != "USD,EUR" {
+		t.Fatalf("fetch calls = %v, want [USD EUR]", fetcher.calls)
+	}
+}
+
+func TestConvertHandlerConvertsToRub(t *testing.T) {
+	fetcher := &fakeRateFetcher{
+		results: map[string]domain.RateResult{
+			"USD": {
+				Currency: "USD",
+				BestBuy:  domain.CurrencyRate{Currency: "USD", Bank: "Bank A", Buy: 90, Sell: 92},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/convert?from=USD&to=RUB&amount=2.5", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouter(fetcher, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body := decodeResponseData[conversionResponse](t, rec)
+	if body.ConvertedAmount != 225 {
+		t.Fatalf("converted amount = %v, want 225", body.ConvertedAmount)
+	}
+	if strings.Join(fetcher.calls, ",") != "USD" {
+		t.Fatalf("fetch calls = %v, want [USD]", fetcher.calls)
+	}
+}
+
+func TestConvertHandlerConvertsFromRub(t *testing.T) {
+	fetcher := &fakeRateFetcher{
+		results: map[string]domain.RateResult{
+			"USD": {
+				Currency: "USD",
+				BestSell: domain.CurrencyRate{Currency: "USD", Bank: "Bank A", Buy: 90, Sell: 92},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/convert?from=RUB&to=USD&amount=184", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouter(fetcher, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body := decodeResponseData[conversionResponse](t, rec)
+	if body.ConvertedAmount != 2 {
+		t.Fatalf("converted amount = %v, want 2", body.ConvertedAmount)
+	}
+	if strings.Join(fetcher.calls, ",") != "USD" {
+		t.Fatalf("fetch calls = %v, want [USD]", fetcher.calls)
+	}
+}
+
+func TestConvertHandlerReturnsSameAmountForSameCurrency(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/convert?from=USD&to=usd&amount=12.5", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouter(nil, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body := decodeResponseData[conversionResponse](t, rec)
+	if body.ConvertedAmount != 12.5 || body.Rate != 1 {
+		t.Fatalf("converted amount/rate = %v/%v, want 12.5/1", body.ConvertedAmount, body.Rate)
+	}
+}
+
+func TestConvertHandlerValidatesInputs(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "missing from", path: "/convert?to=USD&amount=10", want: "from query parameter is required"},
+		{name: "missing to", path: "/convert?from=USD&amount=10", want: "to query parameter is required"},
+		{name: "invalid from", path: "/convert?from=USDT&to=USD&amount=10", want: "from must be a 3-letter code"},
+		{name: "invalid amount", path: "/convert?from=USD&to=EUR&amount=0", want: "amount must be a positive number"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+
+			NewRouter(&fakeRateFetcher{}, nil).ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+			}
+			assertErrorResponse(t, rec, tt.want)
+		})
+	}
+}
+
+func TestConvertHandlerReportsNoRates(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/convert?from=USD&to=EUR&amount=10", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouter(&fakeRateFetcher{err: service.ErrNoRatesAvailable}, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+	assertErrorResponse(t, rec, "no rates available")
+}
+
 func TestRatesHistoryHandlerReturnsHistory(t *testing.T) {
 	fetchedAt := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
 	history := &fakeRateHistoryReader{
@@ -259,10 +396,7 @@ func TestRatesHistoryHandlerReturnsHistory(t *testing.T) {
 		t.Fatalf("limit passed to history = %d, want 2", history.limit)
 	}
 
-	var body []domain.CurrencyRate
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
+	body := decodeResponseData[[]domain.CurrencyRate](t, rec)
 	if len(body) != 2 {
 		t.Fatalf("history rows = %d, want 2", len(body))
 	}
@@ -280,9 +414,108 @@ func TestRatesHistoryHandlerReturnsEmptyArrayWhenNoRows(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if got := strings.TrimSpace(rec.Body.String()); got != "[]" {
-		t.Fatalf("body = %q, want []", got)
+	body := decodeResponseData[[]domain.CurrencyRate](t, rec)
+	if len(body) != 0 {
+		t.Fatalf("history rows = %d, want empty", len(body))
 	}
+}
+
+func TestRatesHistoryByDateHandlerReturnsHistory(t *testing.T) {
+	fetchedAt := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
+	history := &fakeRateHistoryReader{
+		rates: []domain.CurrencyRate{
+			{Currency: "USD", Bank: "Bank A", Buy: 91.2, Sell: 92.1, FetchedAt: fetchedAt},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/rates/history/by-date?currency=usd&from=2026-06-01&to=2026-06-05&limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if history.currency != "USD" {
+		t.Fatalf("currency passed to history = %q, want USD", history.currency)
+	}
+	if history.limit != 10 {
+		t.Fatalf("limit passed to history = %d, want 10", history.limit)
+	}
+	wantFrom := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	wantTo := time.Date(2026, 6, 6, 0, 0, 0, 0, time.UTC)
+	if !history.from.Equal(wantFrom) {
+		t.Fatalf("from = %v, want %v", history.from, wantFrom)
+	}
+	if !history.to.Equal(wantTo) {
+		t.Fatalf("to = %v, want %v", history.to, wantTo)
+	}
+
+	body := decodeResponseData[[]domain.CurrencyRate](t, rec)
+	if len(body) != 1 {
+		t.Fatalf("history rows = %d, want 1", len(body))
+	}
+	if body[0].Bank != "Bank A" {
+		t.Fatalf("first bank = %q, want Bank A", body[0].Bank)
+	}
+}
+
+func TestRatesHistoryByDateHandlerAcceptsRFC3339Range(t *testing.T) {
+	history := &fakeRateHistoryReader{}
+	req := httptest.NewRequest(http.MethodGet, "/rates/history/by-date?currency=USD&from=2026-06-01T03:00:00%2B03:00&to=2026-06-01T12:00:00Z", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	wantFrom := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	wantTo := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	if !history.from.Equal(wantFrom) {
+		t.Fatalf("from = %v, want %v", history.from, wantFrom)
+	}
+	if !history.to.Equal(wantTo) {
+		t.Fatalf("to = %v, want %v", history.to, wantTo)
+	}
+}
+
+func TestRatesHistoryByDateHandlerRequiresDateRange(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "missing from", path: "/rates/history/by-date?currency=USD&to=2026-06-05", want: "from query parameter is required"},
+		{name: "missing to", path: "/rates/history/by-date?currency=USD&from=2026-06-01", want: "to query parameter is required"},
+		{name: "invalid from", path: "/rates/history/by-date?currency=USD&from=soon&to=2026-06-05", want: "from must be YYYY-MM-DD or RFC3339"},
+		{name: "invalid order", path: "/rates/history/by-date?currency=USD&from=2026-06-05&to=2026-06-01", want: "from must be before to"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+
+			NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{}, nil).ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+			}
+			assertErrorResponse(t, rec, tt.want)
+		})
+	}
+}
+
+func TestRatesHistoryByDateHandlerReportsUnconfiguredStore(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/rates/history/by-date?currency=USD&from=2026-06-01&to=2026-06-05", nil)
+	rec := httptest.NewRecorder()
+
+	NewRouter(&fakeRateFetcher{}, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	assertErrorResponse(t, rec, "rate history store is not configured")
 }
 
 func TestRatesHistoryHandlerRequiresCurrency(t *testing.T) {
@@ -434,57 +667,6 @@ func TestRatesHistoryHandlerReportsStoreConfigurationError(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
 	}
 	assertErrorResponse(t, rec, "rate history store is not configured")
-}
-
-func TestRecovererReturnsJSONError(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
-	rec := httptest.NewRecorder()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := recoverer(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		panic("boom")
-	}))
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
-	assertErrorResponse(t, rec, "internal server error")
-}
-
-func TestRecovererHandlesNilLogger(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
-	rec := httptest.NewRecorder()
-	handler := recoverer(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		panic("boom")
-	}))
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
-	assertErrorResponse(t, rec, "internal server error")
-}
-
-func TestRecovererDoesNotWriteErrorAfterResponseStarted(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/panic-after-write", nil)
-	rec := httptest.NewRecorder()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := recoverer(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte("started"))
-		panic("boom")
-	}))
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusAccepted)
-	}
-	if rec.Body.String() != "started" {
-		t.Fatalf("body = %q, want started", rec.Body.String())
-	}
 }
 
 func TestRequestLoggerHandlesNilLogger(t *testing.T) {
@@ -793,50 +975,29 @@ func TestPprofIndexIsMounted(t *testing.T) {
 	}
 }
 
-type fakeRateFetcher struct {
-	result   domain.RateResult
-	err      error
-	currency string
-}
-
-func (f *fakeRateFetcher) FetchRates(ctx context.Context, currency string) (domain.RateResult, error) {
-	if err := ctx.Err(); err != nil {
-		return domain.RateResult{}, err
-	}
-	f.currency = currency
-	if f.err != nil {
-		return domain.RateResult{}, f.err
-	}
-	return f.result, nil
-}
-
-type fakeRateHistoryReader struct {
-	rates    []domain.CurrencyRate
-	err      error
-	currency string
-	limit    int
-}
-
-func (f *fakeRateHistoryReader) History(ctx context.Context, currency string, limit int) ([]domain.CurrencyRate, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	f.currency = currency
-	f.limit = limit
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.rates, nil
-}
-
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, want string) {
 	t.Helper()
 
-	var body errorResponse
+	var body responseEnvelope
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.Error != want {
 		t.Fatalf("error body = %q, want %q", body.Error, want)
 	}
+	if body.Data != nil {
+		t.Fatalf("error response data = %#v, want nil", body.Data)
+	}
+}
+
+func decodeResponseData[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
+	t.Helper()
+
+	var body struct {
+		Data T `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return body.Data
 }

@@ -11,11 +11,11 @@ import (
 
 	"currency-rate-aggregator/internal/bankclient"
 	"currency-rate-aggregator/internal/domain"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
 	ErrNoRatesAvailable   = errors.New("no rates available")
-	errBankClientPanicked = errors.New("bank client panicked")
 	errUnexpectedCurrency = errors.New("bank returned unexpected currency")
 )
 
@@ -122,10 +122,18 @@ func (a *Aggregator) RefreshRates(ctx context.Context, currency string) (domain.
 
 func (a *Aggregator) fetchFreshRates(ctx context.Context, normalized string) (domain.RateResult, error) {
 	results := make(chan fetchResult, len(a.clients))
+	var workers errgroup.Group
 	for _, client := range a.clients {
-		go func(client bankclient.BankClient) {
-			results <- fetchClientRate(ctx, client, normalized)
-		}(client)
+		client := client
+		workers.Go(func() error {
+			result := fetchClientRate(ctx, client, normalized)
+			select {
+			case results <- result:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
 	}
 
 	sources := make([]domain.CurrencyRate, 0, len(a.clients))
@@ -135,6 +143,7 @@ func (a *Aggregator) fetchFreshRates(ctx context.Context, normalized string) (do
 		select {
 		case result = <-results:
 		case <-ctx.Done():
+			_ = workers.Wait()
 			return domain.RateResult{}, ctx.Err()
 		}
 
@@ -155,6 +164,9 @@ func (a *Aggregator) fetchFreshRates(ctx context.Context, normalized string) (do
 		sources = append(sources, rate)
 	}
 
+	if err := workers.Wait(); err != nil {
+		return domain.RateResult{}, err
+	}
 	if err := ctx.Err(); err != nil {
 		return domain.RateResult{}, err
 	}
@@ -178,7 +190,7 @@ func (a *Aggregator) fetchFreshRates(ctx context.Context, normalized string) (do
 	}
 
 	result := domain.RateResult{
-		Currency:  normalized,
+		Currency:  domain.CurrencyCode(normalized),
 		BestBuy:   bestBuy,
 		BestSell:  bestSell,
 		Sources:   sources,
@@ -199,14 +211,14 @@ func (a *Aggregator) fetchFreshRates(ctx context.Context, normalized string) (do
 }
 
 func normalizeFetchedRate(rate domain.CurrencyRate, expectedCurrency string) (domain.CurrencyRate, error) {
-	normalized, err := domain.NormalizeCurrency(rate.Currency)
+	normalized, err := domain.NormalizeCurrency(rate.Currency.String())
 	if err != nil {
 		return domain.CurrencyRate{}, fmt.Errorf("normalize fetched rate currency %q from %s: %w", rate.Currency, rate.Bank, err)
 	}
 	if normalized != expectedCurrency {
 		return domain.CurrencyRate{}, fmt.Errorf("%w: got %s from %s for %s", errUnexpectedCurrency, normalized, rate.Bank, expectedCurrency)
 	}
-	rate.Currency = normalized
+	rate.Currency = domain.CurrencyCode(normalized)
 	rate.FetchedAt = rate.FetchedAt.UTC()
 	return rate, nil
 }
@@ -217,17 +229,13 @@ type fetchResult struct {
 	err  error
 }
 
-func fetchClientRate(ctx context.Context, client bankclient.BankClient, currency string) (result fetchResult) {
-	result.bank = "unknown"
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			result.err = fmt.Errorf("%w: %v", errBankClientPanicked, recovered)
-		}
-	}()
-
-	result.bank = client.Name()
-	result.rate, result.err = client.FetchRate(ctx, currency)
-	return result
+func fetchClientRate(ctx context.Context, client bankclient.BankClient, currency string) fetchResult {
+	rate, err := client.FetchRate(ctx, currency)
+	return fetchResult{
+		bank: client.Name(),
+		rate: rate,
+		err:  err,
+	}
 }
 
 type rateCache interface {

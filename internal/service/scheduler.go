@@ -88,7 +88,7 @@ func (s *Scheduler) refreshAll(ctx context.Context) {
 		}
 
 		s.logger.Info("scheduler refresh succeeded",
-			slog.String("currency", result.Currency),
+			slog.String("currency", result.Currency.String()),
 			slog.Int("sources", len(result.Sources)),
 			slog.Time("updated_at", result.UpdatedAt),
 		)

@@ -61,31 +61,6 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-func recoverer(logger *slog.Logger) func(http.Handler) http.Handler {
-	logger = loggerOrDiscard(logger)
-
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					logger.Error("panic recovered",
-						slog.Any("panic", recovered),
-						slog.String("method", r.Method),
-						slog.String("path", r.URL.Path),
-						slog.Bool("response_started", recorder.wroteHeader),
-					)
-					if !recorder.wroteHeader {
-						writeError(recorder, http.StatusInternalServerError, "internal server error")
-					}
-				}
-			}()
-
-			next.ServeHTTP(recorder, r)
-		})
-	}
-}
-
 func loggerOrDiscard(logger *slog.Logger) *slog.Logger {
 	if logger == nil {
 		return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -160,7 +135,9 @@ func knownMetricPathLabel(path string) (string, bool) {
 	switch path {
 	case "/health",
 		"/rates",
+		"/convert",
 		"/rates/history",
+		"/rates/history/by-date",
 		"/metrics":
 		return path, true
 	}

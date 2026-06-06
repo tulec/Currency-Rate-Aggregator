@@ -32,7 +32,9 @@ func NewRouterWithHistoryRateLimitAndMetrics(rates rateFetcher, history rateHist
 
 	mux.HandleFunc("GET /health", healthHandler)
 	mux.HandleFunc("GET /rates", handlers.ratesHandler)
+	mux.HandleFunc("GET /convert", handlers.convertHandler)
 	mux.HandleFunc("GET /rates/history", handlers.ratesHistoryHandler)
+	mux.HandleFunc("GET /rates/history/by-date", handlers.ratesHistoryByDateHandler)
 	mux.Handle("GET /metrics", metrics)
 	mux.HandleFunc("GET /debug/pprof/", pprof.Index)
 	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
@@ -41,10 +43,12 @@ func NewRouterWithHistoryRateLimitAndMetrics(rates rateFetcher, history rateHist
 	mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 	mux.HandleFunc("/health", methodNotAllowedHandler)
 	mux.HandleFunc("/rates", methodNotAllowedHandler)
+	mux.HandleFunc("/convert", methodNotAllowedHandler)
 	mux.HandleFunc("/rates/history", methodNotAllowedHandler)
+	mux.HandleFunc("/rates/history/by-date", methodNotAllowedHandler)
 	mux.HandleFunc("/metrics", methodNotAllowedHandler)
 	mux.HandleFunc("/debug/pprof/", methodNotAllowedHandler)
 	mux.HandleFunc("/", notFoundHandler)
 
-	return requestMetrics(metrics)(requestLogger(logger)(recoverer(logger)(rateLimitMiddleware(limiter)(mux))))
+	return requestMetrics(metrics)(requestLogger(logger)(rateLimitMiddleware(limiter)(mux)))
 }

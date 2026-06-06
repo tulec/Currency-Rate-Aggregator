@@ -19,6 +19,12 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("SCHEDULER_INTERVAL", "")
 	t.Setenv("SCHEDULER_CURRENCIES", "")
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
+	t.Setenv("RATE_SOURCE", "")
+	t.Setenv("RATE_SOURCES", "")
+	t.Setenv("CBR_DAILY_URL", "")
+	t.Setenv("FRANKFURTER_BASE_URL", "")
+	t.Setenv("TBANK_RATES_URL", "")
+	t.Setenv("TBANK_RATE_CATEGORY", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -52,6 +58,21 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RateLimitRPM != 60 {
 		t.Fatalf("RateLimitRPM = %d, want 60", cfg.RateLimitRPM)
 	}
+	if got, want := cfg.RateSources, []string{"cbr"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("RateSources = %v, want %v", got, want)
+	}
+	if cfg.CBRDailyURL != defaultCBRDailyURL {
+		t.Fatalf("CBRDailyURL = %q, want default", cfg.CBRDailyURL)
+	}
+	if cfg.FrankfurterBaseURL != defaultFrankfurterURL {
+		t.Fatalf("FrankfurterBaseURL = %q, want default", cfg.FrankfurterBaseURL)
+	}
+	if cfg.TBankRatesURL != defaultTBankRatesURL {
+		t.Fatalf("TBankRatesURL = %q, want default", cfg.TBankRatesURL)
+	}
+	if cfg.TBankRateCategory != defaultTBankCategory {
+		t.Fatalf("TBankRateCategory = %q, want default", cfg.TBankRateCategory)
+	}
 }
 
 func TestLoadFromEnv(t *testing.T) {
@@ -64,6 +85,12 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("SCHEDULER_INTERVAL", "2m")
 	t.Setenv("SCHEDULER_CURRENCIES", "usd, eur, gbp")
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", " 120 ")
+	t.Setenv("RATE_SOURCE", "")
+	t.Setenv("RATE_SOURCES", " cbr, tbank, frankfurter, mock, cbr ")
+	t.Setenv("CBR_DAILY_URL", " https://example.test/cbr.xml ")
+	t.Setenv("FRANKFURTER_BASE_URL", " https://example.test/frankfurter ")
+	t.Setenv("TBANK_RATES_URL", " https://example.test/tbank/rates ")
+	t.Setenv("TBANK_RATE_CATEGORY", " C2CTransfers ")
 
 	cfg, err := Load()
 	if err != nil {
@@ -96,6 +123,21 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if cfg.RateLimitRPM != 120 {
 		t.Fatalf("RateLimitRPM = %d, want 120", cfg.RateLimitRPM)
+	}
+	if got, want := cfg.RateSources, []string{"cbr", "tbank", "frankfurter", "mock"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] || got[3] != want[3] {
+		t.Fatalf("RateSources = %v, want %v", got, want)
+	}
+	if cfg.CBRDailyURL != "https://example.test/cbr.xml" {
+		t.Fatalf("CBRDailyURL = %q, want custom URL", cfg.CBRDailyURL)
+	}
+	if cfg.FrankfurterBaseURL != "https://example.test/frankfurter" {
+		t.Fatalf("FrankfurterBaseURL = %q, want custom URL", cfg.FrankfurterBaseURL)
+	}
+	if cfg.TBankRatesURL != "https://example.test/tbank/rates" {
+		t.Fatalf("TBankRatesURL = %q, want custom URL", cfg.TBankRatesURL)
+	}
+	if cfg.TBankRateCategory != "C2CTransfers" {
+		t.Fatalf("TBankRateCategory = %q, want custom category", cfg.TBankRateCategory)
 	}
 }
 
@@ -307,5 +349,45 @@ func TestLoadRejectsNonPositiveRateLimit(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() error = nil, want error")
+	}
+}
+
+func TestLoadRejectsInvalidRateSource(t *testing.T) {
+	t.Setenv("PORT", "")
+	t.Setenv("READ_TIMEOUT", "")
+	t.Setenv("WRITE_TIMEOUT", "")
+	t.Setenv("SHUTDOWN_TIMEOUT", "")
+	t.Setenv("CACHE_TTL", "")
+	t.Setenv("SCHEDULER_INTERVAL", "")
+	t.Setenv("SCHEDULER_CURRENCIES", "")
+	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
+	t.Setenv("RATE_SOURCE", "")
+	t.Setenv("RATE_SOURCES", "bank-web-scraping")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want error")
+	}
+}
+
+func TestLoadSupportsLegacyRateSource(t *testing.T) {
+	t.Setenv("PORT", "")
+	t.Setenv("READ_TIMEOUT", "")
+	t.Setenv("WRITE_TIMEOUT", "")
+	t.Setenv("SHUTDOWN_TIMEOUT", "")
+	t.Setenv("CACHE_TTL", "")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("SCHEDULER_INTERVAL", "")
+	t.Setenv("SCHEDULER_CURRENCIES", "")
+	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
+	t.Setenv("RATE_SOURCE", "mock")
+	t.Setenv("RATE_SOURCES", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if got, want := cfg.RateSources, []string{"mock"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("RateSources = %v, want %v", got, want)
 	}
 }

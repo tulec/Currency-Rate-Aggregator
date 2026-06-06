@@ -6,16 +6,22 @@ import (
 	"unicode"
 )
 
+type CurrencyCode string
+
+func (c CurrencyCode) String() string {
+	return string(c)
+}
+
 type CurrencyRate struct {
-	Currency  string    `json:"currency"`
-	Buy       float64   `json:"buy"`
-	Sell      float64   `json:"sell"`
-	Bank      string    `json:"bank"`
-	FetchedAt time.Time `json:"fetched_at"`
+	Currency  CurrencyCode `json:"currency"`
+	Buy       float64      `json:"buy"`
+	Sell      float64      `json:"sell"`
+	Bank      string       `json:"bank"`
+	FetchedAt time.Time    `json:"fetched_at"`
 }
 
 type RateResult struct {
-	Currency  string         `json:"currency"`
+	Currency  CurrencyCode   `json:"currency"`
 	BestBuy   CurrencyRate   `json:"best_buy"`
 	BestSell  CurrencyRate   `json:"best_sell"`
 	Sources   []CurrencyRate `json:"sources"`
@@ -23,6 +29,14 @@ type RateResult struct {
 }
 
 func NormalizeCurrency(currency string) (string, error) {
+	code, err := NormalizeCurrencyCode(currency)
+	if err != nil {
+		return "", err
+	}
+	return code.String(), nil
+}
+
+func NormalizeCurrencyCode(currency string) (CurrencyCode, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(currency))
 	if len(normalized) != 3 {
 		return "", ErrInvalidCurrencyCode
@@ -34,5 +48,5 @@ func NormalizeCurrency(currency string) (string, error) {
 		}
 	}
 
-	return normalized, nil
+	return CurrencyCode(normalized), nil
 }

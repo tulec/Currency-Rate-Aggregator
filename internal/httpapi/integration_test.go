@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,10 +35,7 @@ func TestRouterIntegrationAggregatesPersistsAndReportsMetrics(t *testing.T) {
 		t.Fatalf("rates status = %d, want %d; body: %s", ratesRec.Code, http.StatusOK, ratesRec.Body.String())
 	}
 
-	var result domain.RateResult
-	if err := json.NewDecoder(ratesRec.Body).Decode(&result); err != nil {
-		t.Fatalf("decode rates response: %v", err)
-	}
+	result := decodeResponseData[domain.RateResult](t, ratesRec)
 	if result.Currency != "USD" {
 		t.Fatalf("result currency = %q, want USD", result.Currency)
 	}
@@ -61,10 +57,7 @@ func TestRouterIntegrationAggregatesPersistsAndReportsMetrics(t *testing.T) {
 		t.Fatalf("cached rates status = %d, want %d; body: %s", cachedRatesRec.Code, http.StatusOK, cachedRatesRec.Body.String())
 	}
 
-	var cachedResult domain.RateResult
-	if err := json.NewDecoder(cachedRatesRec.Body).Decode(&cachedResult); err != nil {
-		t.Fatalf("decode cached rates response: %v", err)
-	}
+	cachedResult := decodeResponseData[domain.RateResult](t, cachedRatesRec)
 	if cachedResult.BestBuy.Bank != result.BestBuy.Bank {
 		t.Fatalf("cached best buy bank = %q, want %q", cachedResult.BestBuy.Bank, result.BestBuy.Bank)
 	}
@@ -77,10 +70,7 @@ func TestRouterIntegrationAggregatesPersistsAndReportsMetrics(t *testing.T) {
 		t.Fatalf("history status = %d, want %d; body: %s", historyRec.Code, http.StatusOK, historyRec.Body.String())
 	}
 
-	var history []domain.CurrencyRate
-	if err := json.NewDecoder(historyRec.Body).Decode(&history); err != nil {
-		t.Fatalf("decode history response: %v", err)
-	}
+	history := decodeResponseData[[]domain.CurrencyRate](t, historyRec)
 	if len(history) != 2 {
 		t.Fatalf("history rows = %d, want 2 saved source rates without duplicating cached response", len(history))
 	}
@@ -88,6 +78,19 @@ func TestRouterIntegrationAggregatesPersistsAndReportsMetrics(t *testing.T) {
 		if rate.Currency != "USD" {
 			t.Fatalf("history currency = %q, want USD", rate.Currency)
 		}
+	}
+
+	byDateReq := httptest.NewRequest(http.MethodGet, "/rates/history/by-date?currency=usd&from=2026-05-18&to=2026-05-18&limit=10", nil)
+	byDateRec := httptest.NewRecorder()
+	handler.ServeHTTP(byDateRec, byDateReq)
+
+	if byDateRec.Code != http.StatusOK {
+		t.Fatalf("history by date status = %d, want %d; body: %s", byDateRec.Code, http.StatusOK, byDateRec.Body.String())
+	}
+
+	byDateHistory := decodeResponseData[[]domain.CurrencyRate](t, byDateRec)
+	if len(byDateHistory) != 2 {
+		t.Fatalf("history by date rows = %d, want 2 saved source rates", len(byDateHistory))
 	}
 
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -146,10 +149,42 @@ func (s *integrationHistoryStore) History(ctx context.Context, currency string, 
 
 	matches := make([]domain.CurrencyRate, 0, len(s.rates))
 	for i := len(s.rates) - 1; i >= 0; i-- {
-		if s.rates[i].Currency != normalized {
+		if s.rates[i].Currency.String() != normalized {
 			continue
 		}
 		matches = append(matches, s.rates[i])
+		if len(matches) == limit {
+			break
+		}
+	}
+
+	return matches, nil
+}
+
+func (s *integrationHistoryStore) HistoryByDate(ctx context.Context, currency string, from, to time.Time, limit int) ([]domain.CurrencyRate, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	normalized, err := domain.NormalizeCurrency(currency)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	matches := make([]domain.CurrencyRate, 0, len(s.rates))
+	for i := len(s.rates) - 1; i >= 0; i-- {
+		rate := s.rates[i]
+		if rate.Currency.String() != normalized {
+			continue
+		}
+		fetchedAt := rate.FetchedAt.UTC()
+		if fetchedAt.Before(from) || !fetchedAt.Before(to) {
+			continue
+		}
+		matches = append(matches, rate)
 		if len(matches) == limit {
 			break
 		}

@@ -42,7 +42,16 @@ func main() {
 		}
 	}()
 
-	clients := bankclient.DefaultLiveMockBanks()
+	clients, err := bankclient.NewClients(cfg.RateSources, bankclient.SourceOptions{
+		CBRDailyURL:        cfg.CBRDailyURL,
+		FrankfurterBaseURL: cfg.FrankfurterBaseURL,
+		TBankRatesURL:      cfg.TBankRatesURL,
+		TBankRateCategory:  cfg.TBankRateCategory,
+	})
+	if err != nil {
+		logger.Error("setup rate sources", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 	rateCache := cache.NewTTLCache(cfg.CacheTTL)
 	metrics := appmetrics.NewHTTPMetrics()
 	aggregator := service.NewAggregatorWithCacheAndStore(clients, rateCache, store).

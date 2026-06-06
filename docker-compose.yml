@@ -9,6 +9,11 @@ services:
       SCHEDULER_INTERVAL: 1m
       CACHE_TTL: 30s
       RATE_LIMIT_REQUESTS_PER_MINUTE: "60"
+      RATE_SOURCES: cbr
+      CBR_DAILY_URL: https://www.cbr.ru/scripts/XML_daily.asp
+      FRANKFURTER_BASE_URL: https://api.frankfurter.dev/v2
+      TBANK_RATES_URL: https://www.tinkoff.ru/api/v1/currency_rates/
+      TBANK_RATE_CATEGORY: DebitCardsTransfers
     ports:
       - "8080:8080"
     depends_on:

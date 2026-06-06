@@ -54,6 +54,9 @@ func TestPostgresStoreReportsUnconfiguredStore(t *testing.T) {
 	if _, err := store.History(context.Background(), "USD", 10); !errors.Is(err, ErrStoreNotConfigured) {
 		t.Fatalf("History() error = %v, want ErrStoreNotConfigured", err)
 	}
+	if _, err := store.HistoryByDate(context.Background(), "USD", time.Now(), time.Now().Add(time.Hour), 10); !errors.Is(err, ErrStoreNotConfigured) {
+		t.Fatalf("HistoryByDate() error = %v, want ErrStoreNotConfigured", err)
+	}
 }
 
 func TestPostgresStoreSaveRatesInsertsRatesTransactionally(t *testing.T) {
@@ -238,6 +241,61 @@ func TestPostgresStoreHistoryReturnsEmptySliceWhenNoRows(t *testing.T) {
 	}
 	if len(rates) != 0 {
 		t.Fatalf("rates = %d, want 0", len(rates))
+	}
+}
+
+func TestPostgresStoreHistoryByDateFiltersRangeAndCapsLimit(t *testing.T) {
+	from := time.Date(2026, 6, 1, 3, 0, 0, 0, time.FixedZone("MSK", 3*60*60))
+	to := time.Date(2026, 6, 5, 3, 0, 0, 0, time.FixedZone("MSK", 3*60*60))
+	fetchedAt := time.Date(2026, 6, 2, 10, 0, 0, 0, time.FixedZone("MSK", 3*60*60))
+	rows := &fakeRows{
+		values: [][]any{
+			{"USD", 91.2, 92.1, "Bank A", fetchedAt},
+		},
+	}
+	db := &fakeDB{rows: rows}
+	store := &PostgresStore{db: db}
+
+	rates, err := store.HistoryByDate(context.Background(), " usd ", from, to, MaxHistoryLimit+1)
+	if err != nil {
+		t.Fatalf("HistoryByDate() error = %v", err)
+	}
+
+	if len(rates) != 1 {
+		t.Fatalf("rates = %d, want 1", len(rates))
+	}
+	if rates[0].FetchedAt != fetchedAt.UTC() {
+		t.Fatalf("FetchedAt = %v, want %v", rates[0].FetchedAt, fetchedAt.UTC())
+	}
+	if db.query.args[0] != "USD" {
+		t.Fatalf("query currency = %v, want USD", db.query.args[0])
+	}
+	if db.query.args[1] != from.UTC() {
+		t.Fatalf("query from = %v, want %v", db.query.args[1], from.UTC())
+	}
+	if db.query.args[2] != to.UTC() {
+		t.Fatalf("query to = %v, want %v", db.query.args[2], to.UTC())
+	}
+	if db.query.args[3] != MaxHistoryLimit {
+		t.Fatalf("query limit = %v, want %d", db.query.args[3], MaxHistoryLimit)
+	}
+	if !strings.Contains(db.query.query, "fetched_at >= $2") || !strings.Contains(db.query.query, "fetched_at < $3") {
+		t.Fatalf("history by date query = %q, want date range filter", db.query.query)
+	}
+	if !rows.closed {
+		t.Fatal("rows were not closed")
+	}
+}
+
+func TestPostgresStoreHistoryByDateRejectsInvalidCurrency(t *testing.T) {
+	store := &PostgresStore{db: &fakeDB{}}
+
+	_, err := store.HistoryByDate(context.Background(), "USDT", time.Now(), time.Now().Add(time.Hour), 10)
+	if !errors.Is(err, domain.ErrInvalidCurrencyCode) {
+		t.Fatalf("HistoryByDate() error = %v, want ErrInvalidCurrencyCode", err)
+	}
+	if !strings.Contains(err.Error(), `normalize history currency "USDT"`) {
+		t.Fatalf("HistoryByDate() error = %q, want currency context", err)
 	}
 }
 

@@ -23,7 +23,7 @@ func NewMockBank(name string, rates map[string]domain.CurrencyRate) *MockBank {
 		if err != nil {
 			continue
 		}
-		rate.Currency = normalized
+		rate.Currency = domain.CurrencyCode(normalized)
 		rate.Bank = name
 		copied[normalized] = rate
 	}
@@ -95,7 +95,7 @@ func (b *MockBank) FetchRate(ctx context.Context, currency string) (domain.Curre
 		return domain.CurrencyRate{}, domain.ErrCurrencyNotFound
 	}
 
-	rate.Currency = normalized
+	rate.Currency = domain.CurrencyCode(normalized)
 	rate.Bank = b.name
 	if rate.FetchedAt.IsZero() {
 		rate.FetchedAt = time.Now().UTC()
