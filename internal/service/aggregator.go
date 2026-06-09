@@ -148,9 +148,6 @@ func (a *Aggregator) fetchFreshRates(ctx context.Context, normalized string) (do
 		}
 
 		if result.err != nil {
-			if errors.Is(result.err, context.Canceled) || errors.Is(result.err, context.DeadlineExceeded) {
-				return domain.RateResult{}, result.err
-			}
 			a.recordBankRequestError(result.bank, normalized, result.err)
 			errs = append(errs, result.err)
 			continue

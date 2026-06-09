@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"golang.org/x/text/encoding/charmap"
 )
 
 const (
@@ -84,7 +85,11 @@ func (c *CBRClient) FetchRate(ctx context.Context, currency string) (domain.Curr
 	if err != nil {
 		return domain.CurrencyRate{}, fmt.Errorf("%w: fetch CBR rates: %w", domain.ErrBankUnavailable, err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+		}
+	}(resp.Body)
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return domain.CurrencyRate{}, fmt.Errorf("%w: CBR returned HTTP %d", domain.ErrBankUnavailable, resp.StatusCode)
@@ -168,45 +173,10 @@ func cbrCharsetReader(label string, input io.Reader) (io.Reader, error) {
 	normalized := strings.ToLower(strings.TrimSpace(label))
 	switch normalized {
 	case "windows-1251", "cp1251":
-		return windows1251ToUTF8(input)
+		return charmap.Windows1251.NewDecoder().Reader(input), nil
 	case "utf-8", "utf8":
 		return input, nil
 	default:
 		return nil, fmt.Errorf("unsupported charset %q", label)
 	}
-}
-
-func windows1251ToUTF8(input io.Reader) (io.Reader, error) {
-	data, err := io.ReadAll(input)
-	if err != nil {
-		return nil, err
-	}
-
-	var out strings.Builder
-	out.Grow(len(data))
-	for _, b := range data {
-		out.WriteRune(windows1251Rune(b))
-	}
-	return strings.NewReader(out.String()), nil
-}
-
-func windows1251Rune(b byte) rune {
-	if b < 0x80 {
-		return rune(b)
-	}
-	if b >= 0xC0 {
-		return rune(0x0410 + int(b) - 0xC0)
-	}
-
-	table := [...]rune{
-		0x0402, 0x0403, 0x201A, 0x0453, 0x201E, 0x2026, 0x2020, 0x2021,
-		0x20AC, 0x2030, 0x0409, 0x2039, 0x040A, 0x040C, 0x040B, 0x040F,
-		0x0452, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
-		0x0098, 0x2122, 0x0459, 0x203A, 0x045A, 0x045C, 0x045B, 0x045F,
-		0x00A0, 0x040E, 0x045E, 0x0408, 0x00A4, 0x0490, 0x00A6, 0x00A7,
-		0x0401, 0x00A9, 0x0404, 0x00AB, 0x00AC, 0x00AD, 0x00AE, 0x0407,
-		0x00B0, 0x00B1, 0x0406, 0x0456, 0x0491, 0x00B5, 0x00B6, 0x00B7,
-		0x0451, 0x2116, 0x0454, 0x00BB, 0x0458, 0x0405, 0x0455, 0x0457,
-	}
-	return table[b-0x80]
 }

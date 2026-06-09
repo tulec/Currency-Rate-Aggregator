@@ -377,31 +377,43 @@ func TestAggregatorFetchRatesStopsOnContextCancellation(t *testing.T) {
 	}
 }
 
-func TestAggregatorFetchRatesReturnsContextErrorFromClient(t *testing.T) {
+func TestAggregatorFetchRatesReturnsPartialDataWhenClientReturnsContextError(t *testing.T) {
 	metrics := newFakeAggregatorMetrics()
 	aggregator := NewAggregator(testClients(
 		testClient{name: "Bank A", rate: domain.CurrencyRate{Currency: "USD", Bank: "Bank A", Buy: 91.2, Sell: 92.1}},
 		testClient{name: "Canceled Bank", err: context.Canceled},
 	)).WithMetrics(metrics)
 
-	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("FetchRates() error = %v, want context.Canceled", err)
+	result, err := aggregator.FetchRates(context.Background(), "USD")
+	if err != nil {
+		t.Fatalf("FetchRates() error = %v", err)
 	}
-	if metrics.bankErrors["Canceled Bank"] != 0 {
-		t.Fatalf("bank error metrics = %d, want 0 for context cancellation", metrics.bankErrors["Canceled Bank"])
+	if result.BestBuy.Bank != "Bank A" {
+		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
+	}
+	if len(result.Sources) != 1 {
+		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
+	}
+	if metrics.bankErrors["Canceled Bank"] != 1 {
+		t.Fatalf("bank error metrics = %d, want 1", metrics.bankErrors["Canceled Bank"])
 	}
 }
 
-func TestAggregatorFetchRatesReturnsDeadlineErrorFromClient(t *testing.T) {
+func TestAggregatorFetchRatesReturnsPartialDataWhenClientDeadlineExpires(t *testing.T) {
 	aggregator := NewAggregator(testClients(
 		testClient{name: "Bank A", rate: domain.CurrencyRate{Currency: "USD", Bank: "Bank A", Buy: 91.2, Sell: 92.1}},
 		testClient{name: "Slow Bank", err: context.DeadlineExceeded},
 	))
 
-	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("FetchRates() error = %v, want context.DeadlineExceeded", err)
+	result, err := aggregator.FetchRates(context.Background(), "USD")
+	if err != nil {
+		t.Fatalf("FetchRates() error = %v", err)
+	}
+	if result.BestBuy.Bank != "Bank A" {
+		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
+	}
+	if len(result.Sources) != 1 {
+		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
 	}
 }
 

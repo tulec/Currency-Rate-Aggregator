@@ -1,0 +1,636 @@
+{
+  "info": {
+    "_postman_id": "8894f2cf-cf75-4bea-8f52-cbb2cb74d414",
+    "name": "Currency Rate Aggregator",
+    "description": "Requests for local development and project defense. Start the service with RATE_SOURCES=mock before running the collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response time is below 2 seconds\", function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "currency",
+      "value": "USD",
+      "type": "string"
+    },
+    {
+      "key": "fromCurrency",
+      "value": "USD",
+      "type": "string"
+    },
+    {
+      "key": "toCurrency",
+      "value": "EUR",
+      "type": "string"
+    },
+    {
+      "key": "amount",
+      "value": "100",
+      "type": "string"
+    },
+    {
+      "key": "historyLimit",
+      "value": "10",
+      "type": "string"
+    },
+    {
+      "key": "dateFrom",
+      "value": "2026-06-01",
+      "type": "string"
+    },
+    {
+      "key": "dateTo",
+      "value": "2026-06-09",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Checks that the HTTP server is running."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Service status is ok\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.status).to.eql(\"ok\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Rates",
+      "item": [
+        {
+          "name": "Get current rate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates?currency={{currency}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "{{currency}}",
+                  "description": "Three-letter currency code."
+                }
+              ]
+            },
+            "description": "Gets source rates and selects the maximum buy and minimum sell offers."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains aggregated rates\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.currency).to.eql(pm.variables.get(\"currency\"));",
+                  "    pm.expect(data.best_buy).to.be.an(\"object\");",
+                  "    pm.expect(data.best_sell).to.be.an(\"object\");",
+                  "    pm.expect(data.sources).to.be.an(\"array\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"Best buy and sell are selected correctly\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    const maxBuy = Math.max(...data.sources.map(rate => rate.buy));",
+                  "    const minSell = Math.min(...data.sources.map(rate => rate.sell));",
+                  "    pm.expect(data.best_buy.buy).to.eql(maxBuy);",
+                  "    pm.expect(data.best_sell.sell).to.eql(minSell);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get EUR rate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates?currency=EUR",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "EUR"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Conversion",
+      "item": [
+        {
+          "name": "Convert currencies",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/convert?from={{fromCurrency}}&to={{toCurrency}}&amount={{amount}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "convert"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{fromCurrency}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{toCurrency}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "{{amount}}"
+                }
+              ]
+            },
+            "description": "Converts an amount between currencies using RUB as the base currency."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Converted amount is positive\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.converted_amount).to.be.above(0);",
+                  "    pm.expect(data.rate).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Convert USD to RUB",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/convert?from=USD&to=RUB&amount=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "convert"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "USD"
+                },
+                {
+                  "key": "to",
+                  "value": "RUB"
+                },
+                {
+                  "key": "amount",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. History (PostgreSQL required)",
+      "description": "These requests require DATABASE_URL and a running PostgreSQL instance.",
+      "item": [
+        {
+          "name": "Get recent history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/history?currency={{currency}}&limit={{historyLimit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "{{currency}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{historyLimit}}"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200 when PostgreSQL is configured\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"History is an array\", function () {",
+                  "    pm.expect(pm.response.json().data).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get history by date",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/history/by-date?currency={{currency}}&from={{dateFrom}}&to={{dateTo}}&limit={{historyLimit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates",
+                "history",
+                "by-date"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "{{currency}}"
+                },
+                {
+                  "key": "from",
+                  "value": "{{dateFrom}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{dateTo}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{historyLimit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Observability",
+      "item": [
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/plain"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains Prometheus metrics\", function () {",
+                  "    pm.expect(pm.response.text()).to.include(\"http_requests_total\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pprof index",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/debug/pprof/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "debug",
+                "pprof",
+                ""
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Validation and errors",
+      "item": [
+        {
+          "name": "Missing currency - 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Response uses error envelope\", function () {",
+                  "    pm.expect(pm.response.json().error).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid currency - 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates?currency=USDT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USDT"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid amount - 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/convert?from=USD&to=EUR&amount=-10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "convert"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "USD"
+                },
+                {
+                  "key": "to",
+                  "value": "EUR"
+                },
+                {
+                  "key": "amount",
+                  "value": "-10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Method not allowed - 405",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates?currency=USD",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 405\", function () {",
+                  "    pm.response.to.have.status(405);",
+                  "});",
+                  "",
+                  "pm.test(\"Allow header is present\", function () {",
+                  "    pm.expect(pm.response.headers.get(\"Allow\")).to.include(\"GET\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown route - 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/unknown",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "unknown"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
