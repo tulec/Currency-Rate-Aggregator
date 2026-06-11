@@ -41,6 +41,14 @@ type conversionResponse struct {
 	Amount          float64             `json:"amount"`
 	ConvertedAmount float64             `json:"converted_amount"`
 	Rate            float64             `json:"rate"`
+	ExchangeSteps   []conversionStep    `json:"exchange_steps"`
+}
+
+type conversionStep struct {
+	From   domain.CurrencyCode `json:"from"`
+	To     domain.CurrencyCode `json:"to"`
+	Source string              `json:"source"`
+	Rate   float64             `json:"rate"`
 }
 
 type responseEnvelope struct {
@@ -146,6 +154,7 @@ func (h handlers) convertHandler(w http.ResponseWriter, r *http.Request) {
 			Amount:          amount,
 			ConvertedAmount: amount,
 			Rate:            1,
+			ExchangeSteps:   []conversionStep{},
 		})
 		return
 	}
@@ -155,7 +164,7 @@ func (h handlers) convertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	converted, err := h.convertAmount(r.Context(), from, to, amount)
+	converted, steps, err := h.convertAmount(r.Context(), from, to, amount)
 	if err != nil {
 		h.writeRatesError(w, err)
 		return
@@ -167,28 +176,43 @@ func (h handlers) convertHandler(w http.ResponseWriter, r *http.Request) {
 		Amount:          amount,
 		ConvertedAmount: converted,
 		Rate:            converted / amount,
+		ExchangeSteps:   steps,
 	})
 }
 
-func (h handlers) convertAmount(ctx context.Context, from, to string, amount float64) (float64, error) {
+func (h handlers) convertAmount(ctx context.Context, from, to string, amount float64) (float64, []conversionStep, error) {
 	rubles := amount
+	steps := make([]conversionStep, 0, 2)
 	if from != baseCurrency {
 		fromRates, err := h.rates.FetchRates(ctx, from)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 		rubles = amount * fromRates.BestBuy.Buy
+		steps = append(steps, conversionStep{
+			From:   domain.CurrencyCode(from),
+			To:     baseCurrency,
+			Source: fromRates.BestBuy.Bank,
+			Rate:   fromRates.BestBuy.Buy,
+		})
 	}
 
 	if to == baseCurrency {
-		return rubles, nil
+		return rubles, steps, nil
 	}
 
 	toRates, err := h.rates.FetchRates(ctx, to)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	return rubles / toRates.BestSell.Sell, nil
+	stepRate := 1 / toRates.BestSell.Sell
+	steps = append(steps, conversionStep{
+		From:   baseCurrency,
+		To:     domain.CurrencyCode(to),
+		Source: toRates.BestSell.Bank,
+		Rate:   stepRate,
+	})
+	return rubles * stepRate, steps, nil
 }
 
 func (h handlers) ratesHistoryHandler(w http.ResponseWriter, r *http.Request) {

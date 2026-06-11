@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS rates (
 	id BIGSERIAL PRIMARY KEY,
 	currency TEXT NOT NULL,
@@ -6,3 +7,6 @@ CREATE TABLE IF NOT EXISTS rates (
 	bank TEXT NOT NULL,
 	fetched_at TIMESTAMPTZ NOT NULL
 );
+
+-- +goose Down
+DROP TABLE IF EXISTS rates;

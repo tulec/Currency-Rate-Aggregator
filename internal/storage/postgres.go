@@ -6,18 +6,17 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"github.com/pressly/goose/v3"
 )
 
 //go:embed migrations/*.sql
 var postgresMigrations embed.FS
 
-var postgresMigrationFiles = []string{
-	"migrations/001_create_rates_table.sql",
-	"migrations/002_create_rates_index.sql",
-}
+const postgresMigrationsDir = "migrations"
 
 // noinspection SqlResolve
 const postgresInsertRateSQL = `
@@ -43,32 +42,65 @@ ORDER BY fetched_at DESC, id DESC
 LIMIT $4`
 
 type PostgresStore struct {
-	db dbRunner
+	db         dbRunner
+	migrations schemaMigrator
 }
 
 func NewPostgresStore(db *sql.DB) *PostgresStore {
 	if db == nil {
 		return &PostgresStore{}
 	}
-	return &PostgresStore{db: sqlDB{db: db}}
+	return &PostgresStore{
+		db:         sqlDB{db: db},
+		migrations: gooseSchemaMigrator{db: db},
+	}
 }
 
 func (s *PostgresStore) Migrate(ctx context.Context) error {
-	if s == nil || s.db == nil {
+	if s == nil || s.db == nil || s.migrations == nil {
 		return ErrStoreNotConfigured
 	}
 
-	for _, file := range postgresMigrationFiles {
-		query, err := postgresMigrations.ReadFile(file)
-		if err != nil {
-			return fmt.Errorf("read postgres migration %s: %w", file, err)
-		}
-		if _, err := s.db.ExecContext(ctx, string(query)); err != nil {
-			return fmt.Errorf("apply postgres migration %s: %w", file, err)
-		}
+	if err := s.migrations.Up(ctx); err != nil {
+		return fmt.Errorf("apply postgres migrations with goose: %w", err)
 	}
 
 	return nil
+}
+
+type schemaMigrator interface {
+	Up(ctx context.Context) error
+}
+
+type gooseSchemaMigrator struct {
+	db *sql.DB
+}
+
+func (m gooseSchemaMigrator) Up(ctx context.Context) error {
+	provider, err := newGooseProvider(m.db)
+	if err != nil {
+		return err
+	}
+	_, err = provider.Up(ctx)
+	return err
+}
+
+func newGooseProvider(db *sql.DB) (*goose.Provider, error) {
+	migrations, err := fs.Sub(postgresMigrations, postgresMigrationsDir)
+	if err != nil {
+		return nil, fmt.Errorf("open embedded postgres migrations: %w", err)
+	}
+
+	provider, err := goose.NewProvider(
+		goose.DialectPostgres,
+		db,
+		migrations,
+		goose.WithLogger(goose.NopLogger()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create postgres goose provider: %w", err)
+	}
+	return provider, nil
 }
 
 func (s *PostgresStore) SaveRates(ctx context.Context, rates []domain.CurrencyRate) (err error) {

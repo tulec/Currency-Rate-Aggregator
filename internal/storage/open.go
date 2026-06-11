@@ -19,6 +19,15 @@ func OpenPostgresStore(ctx context.Context, databaseURL string) (*PostgresStore,
 }
 
 func openPostgresStore(ctx context.Context, driverName, databaseURL string) (*PostgresStore, func() error, error) {
+	return openPostgresStoreWithFactory(ctx, driverName, databaseURL, NewPostgresStore)
+}
+
+func openPostgresStoreWithFactory(
+	ctx context.Context,
+	driverName string,
+	databaseURL string,
+	newStore func(*sql.DB) *PostgresStore,
+) (*PostgresStore, func() error, error) {
 	databaseURL = strings.TrimSpace(databaseURL)
 	if databaseURL == "" {
 		return nil, func() error { return nil }, nil
@@ -36,7 +45,7 @@ func openPostgresStore(ctx context.Context, driverName, databaseURL string) (*Po
 		return nil, func() error { return nil }, closeDBAfterOpenError(db, fmt.Errorf("ping postgres: %w", err))
 	}
 
-	store := NewPostgresStore(db)
+	store := newStore(db)
 	if err := store.Migrate(ctx); err != nil {
 		return nil, func() error { return nil }, closeDBAfterOpenError(db, err)
 	}
