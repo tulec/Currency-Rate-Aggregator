@@ -14,6 +14,7 @@ import (
 	"currency-rate-aggregator/internal/ratelimit"
 	"currency-rate-aggregator/internal/service"
 	"currency-rate-aggregator/internal/storage"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHealthHandler(t *testing.T) {
@@ -21,18 +22,17 @@ func TestHealthHandler(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(nil, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
 	if got := rec.Header().Get("Content-Type"); got != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", got)
+		require.FailNowf(t, "test failed", "Content-Type = %q, want application/json", got)
 	}
 
 	body := decodeResponseData[healthResponse](t, rec)
-	if body.Status != "ok" {
-		t.Fatalf("status body = %q, want ok", body.Status)
-	}
+	require.EqualValuesf(t, "ok", body.Status,
+		"status body = %q, want ok", body.Status)
+
 }
 
 func TestHealthHandlerRejectsUnsupportedMethod(t *testing.T) {
@@ -40,12 +40,11 @@ func TestHealthHandlerRejectsUnsupportedMethod(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(nil, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusMethodNotAllowed, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
-	}
 	if got := rec.Header().Get("Allow"); got != allowedReadMethods {
-		t.Fatalf("Allow header = %q, want %q", got, allowedReadMethods)
+		require.FailNowf(t, "test failed", "Allow header = %q, want %q", got, allowedReadMethods)
 	}
 	assertErrorResponse(t, rec, "method not allowed")
 }
@@ -55,12 +54,11 @@ func TestPprofRejectsUnsupportedMethodWithAllowHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(nil, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusMethodNotAllowed, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
-	}
 	if got := rec.Header().Get("Allow"); got != allowedReadMethods {
-		t.Fatalf("Allow header = %q, want %q", got, allowedReadMethods)
+		require.FailNowf(t, "test failed", "Allow header = %q, want %q", got, allowedReadMethods)
 	}
 	assertErrorResponse(t, rec, "method not allowed")
 }
@@ -70,10 +68,9 @@ func TestRouterReturnsJSONForUnknownRoute(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(nil, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusNotFound, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusNotFound)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
-	}
 	assertErrorResponse(t, rec, "route not found")
 }
 
@@ -82,10 +79,9 @@ func TestRatesHandlerRequiresCurrency(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency query parameter is required")
 }
 
@@ -94,10 +90,9 @@ func TestRatesHandlerRequiresNonBlankCurrency(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency query parameter is required")
 }
 
@@ -132,27 +127,21 @@ func TestRatesHandlerReturnsAggregatedRates(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(fetcher, nil).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if fetcher.currency != "USD" {
-		t.Fatalf("currency passed to fetcher = %q, want USD", fetcher.currency)
-	}
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
+	require.EqualValuesf(t, "USD", fetcher.currency,
+		"currency passed to fetcher = %q, want USD", fetcher.currency)
 
 	body := decodeResponseData[domain.RateResult](t, rec)
-	if body.Currency != "USD" {
-		t.Fatalf("Currency = %q, want USD", body.Currency)
-	}
-	if body.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", body.BestBuy.Bank)
-	}
-	if body.BestSell.Bank != "Bank B" {
-		t.Fatalf("BestSell.Bank = %q, want Bank B", body.BestSell.Bank)
-	}
-	if len(body.Sources) != 2 {
-		t.Fatalf("len(Sources) = %d, want 2", len(body.Sources))
-	}
+	require.EqualValuesf(t, "USD", body.Currency,
+		"Currency = %q, want USD", body.Currency)
+	require.EqualValuesf(t, "Bank A", body.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Bank A", body.BestBuy.Bank)
+	require.EqualValuesf(t, "Bank B", body.BestSell.Bank,
+		"BestSell.Bank = %q, want Bank B", body.BestSell.Bank)
+	require.Lenf(t, body.Sources, 2,
+		"len(Sources) = %d, want 2", len(body.Sources))
+
 }
 
 func TestRatesHandlerReturnsBadRequestForInvalidCurrency(t *testing.T) {
@@ -160,10 +149,9 @@ func TestRatesHandlerReturnsBadRequestForInvalidCurrency(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{err: domain.ErrInvalidCurrencyCode}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency must be a 3-letter code")
 }
 
@@ -172,10 +160,9 @@ func TestRatesHandlerValidatesCurrencyBeforeRatesService(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(nil, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency must be a 3-letter code")
 }
 
@@ -185,10 +172,9 @@ func TestRatesHandlerReportsTypedNilRatesService(t *testing.T) {
 
 	var fetcher *fakeRateFetcher
 	NewRouter(fetcher, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusInternalServerError, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusInternalServerError)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
 	assertErrorResponse(t, rec, "rates service is not configured")
 }
 
@@ -197,10 +183,9 @@ func TestRatesHandlerReturnsUnavailableWhenNoRatesExist(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{err: service.ErrNoRatesAvailable}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusServiceUnavailable, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
-	}
 	assertErrorResponse(t, rec, "no rates available")
 }
 
@@ -209,10 +194,9 @@ func TestRatesHandlerReturnsGatewayTimeoutOnDeadline(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{err: context.DeadlineExceeded}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusGatewayTimeout, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusGatewayTimeout)
 
-	if rec.Code != http.StatusGatewayTimeout {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusGatewayTimeout)
-	}
 	assertErrorResponse(t, rec, "request timed out")
 }
 
@@ -221,10 +205,9 @@ func TestRatesHandlerReturnsClientClosedRequestOnCancellation(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{err: context.Canceled}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, statusClientClosedRequest, rec.Code,
+		"status = %d, want %d", rec.Code, statusClientClosedRequest)
 
-	if rec.Code != statusClientClosedRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, statusClientClosedRequest)
-	}
 	assertErrorResponse(t, rec, "request canceled")
 }
 
@@ -245,26 +228,30 @@ func TestConvertHandlerConvertsBetweenForeignCurrenciesViaRub(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(fetcher, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
 	body := decodeResponseData[conversionResponse](t, rec)
-	if body.From != "USD" || body.To != "EUR" {
-		t.Fatalf("currencies = %s/%s, want USD/EUR", body.From, body.To)
+	require.Falsef(t, body.From != "USD" || body.To != "EUR",
+		"currencies = %s/%s, want USD/EUR", body.From, body.To)
+	require.EqualValuesf(t, 10, body.Amount,
+		"amount = %v, want 10", body.Amount)
+	require.EqualValuesf(t, 9, body.ConvertedAmount,
+		"converted amount = %v, want 9", body.ConvertedAmount)
+	require.EqualValuesf(t, 0.9, body.Rate,
+		"rate = %v, want 0.9", body.Rate)
+	require.Lenf(t, body.ExchangeSteps, 2,
+		"exchange steps = %d, want 2", len(body.ExchangeSteps))
+
+	if step := body.ExchangeSteps[0]; step.From != "USD" || step.To != "RUB" || step.Source != "Bank A" || step.Rate != 90 {
+		require.FailNowf(t, "test failed", "first exchange step = %+v, want USD/RUB from Bank A at 90", step)
 	}
-	if body.Amount != 10 {
-		t.Fatalf("amount = %v, want 10", body.Amount)
+	if step := body.ExchangeSteps[1]; step.From != "RUB" || step.To != "EUR" || step.Source != "Bank B" || step.Rate != 0.01 {
+		require.FailNowf(t, "test failed", "second exchange step = %+v, want RUB/EUR from Bank B at 0.01", step)
 	}
-	if body.ConvertedAmount != 9 {
-		t.Fatalf("converted amount = %v, want 9", body.ConvertedAmount)
-	}
-	if body.Rate != 0.9 {
-		t.Fatalf("rate = %v, want 0.9", body.Rate)
-	}
-	if strings.Join(fetcher.calls, ",") != "USD,EUR" {
-		t.Fatalf("fetch calls = %v, want [USD EUR]", fetcher.calls)
-	}
+	require.EqualValuesf(t, "USD,EUR", strings.Join(fetcher.calls, ","),
+		"fetch calls = %v, want [USD EUR]", fetcher.calls)
+
 }
 
 func TestConvertHandlerConvertsToRub(t *testing.T) {
@@ -280,17 +267,21 @@ func TestConvertHandlerConvertsToRub(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(fetcher, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
 	body := decodeResponseData[conversionResponse](t, rec)
-	if body.ConvertedAmount != 225 {
-		t.Fatalf("converted amount = %v, want 225", body.ConvertedAmount)
+	require.EqualValuesf(t, 225, body.ConvertedAmount,
+		"converted amount = %v, want 225", body.ConvertedAmount)
+	require.Lenf(t, body.ExchangeSteps, 1,
+		"exchange steps = %d, want 1", len(body.ExchangeSteps))
+
+	if step := body.ExchangeSteps[0]; step.From != "USD" || step.To != "RUB" || step.Source != "Bank A" || step.Rate != 90 {
+		require.FailNowf(t, "test failed", "exchange step = %+v, want USD/RUB from Bank A at 90", step)
 	}
-	if strings.Join(fetcher.calls, ",") != "USD" {
-		t.Fatalf("fetch calls = %v, want [USD]", fetcher.calls)
-	}
+	require.EqualValuesf(t, "USD", strings.Join(fetcher.calls, ","),
+		"fetch calls = %v, want [USD]", fetcher.calls)
+
 }
 
 func TestConvertHandlerConvertsFromRub(t *testing.T) {
@@ -306,17 +297,21 @@ func TestConvertHandlerConvertsFromRub(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(fetcher, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
 	body := decodeResponseData[conversionResponse](t, rec)
-	if body.ConvertedAmount != 2 {
-		t.Fatalf("converted amount = %v, want 2", body.ConvertedAmount)
+	require.EqualValuesf(t, 2, body.ConvertedAmount,
+		"converted amount = %v, want 2", body.ConvertedAmount)
+	require.Lenf(t, body.ExchangeSteps, 1,
+		"exchange steps = %d, want 1", len(body.ExchangeSteps))
+
+	if step := body.ExchangeSteps[0]; step.From != "RUB" || step.To != "USD" || step.Source != "Bank A" || step.Rate != 1.0/92 {
+		require.FailNowf(t, "test failed", "exchange step = %+v, want RUB/USD from Bank A at %v", step, 1.0/92)
 	}
-	if strings.Join(fetcher.calls, ",") != "USD" {
-		t.Fatalf("fetch calls = %v, want [USD]", fetcher.calls)
-	}
+	require.EqualValuesf(t, "USD", strings.Join(fetcher.calls, ","),
+		"fetch calls = %v, want [USD]", fetcher.calls)
+
 }
 
 func TestConvertHandlerReturnsSameAmountForSameCurrency(t *testing.T) {
@@ -324,14 +319,15 @@ func TestConvertHandlerReturnsSameAmountForSameCurrency(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(nil, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
 	body := decodeResponseData[conversionResponse](t, rec)
-	if body.ConvertedAmount != 12.5 || body.Rate != 1 {
-		t.Fatalf("converted amount/rate = %v/%v, want 12.5/1", body.ConvertedAmount, body.Rate)
-	}
+	require.Falsef(t, body.ConvertedAmount != 12.5 || body.Rate != 1,
+		"converted amount/rate = %v/%v, want 12.5/1", body.ConvertedAmount, body.Rate)
+	require.Lenf(t, body.ExchangeSteps, 0,
+		"exchange steps = %d, want 0", len(body.ExchangeSteps))
+
 }
 
 func TestConvertHandlerValidatesInputs(t *testing.T) {
@@ -352,10 +348,9 @@ func TestConvertHandlerValidatesInputs(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			NewRouter(&fakeRateFetcher{}, nil).ServeHTTP(rec, req)
+			require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+				"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-			}
 			assertErrorResponse(t, rec, tt.want)
 		})
 	}
@@ -366,10 +361,9 @@ func TestConvertHandlerReportsNoRates(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{err: service.ErrNoRatesAvailable}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusServiceUnavailable, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
-	}
 	assertErrorResponse(t, rec, "no rates available")
 }
 
@@ -385,24 +379,19 @@ func TestRatesHistoryHandlerReturnsHistory(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if history.currency != "USD" {
-		t.Fatalf("currency passed to history = %q, want USD", history.currency)
-	}
-	if history.limit != 2 {
-		t.Fatalf("limit passed to history = %d, want 2", history.limit)
-	}
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
+	require.EqualValuesf(t, "USD", history.currency,
+		"currency passed to history = %q, want USD", history.currency)
+	require.EqualValuesf(t, 2, history.limit,
+		"limit passed to history = %d, want 2", history.limit)
 
 	body := decodeResponseData[[]domain.CurrencyRate](t, rec)
-	if len(body) != 2 {
-		t.Fatalf("history rows = %d, want 2", len(body))
-	}
-	if body[0].Bank != "Bank A" {
-		t.Fatalf("first bank = %q, want Bank A", body[0].Bank)
-	}
+	require.Lenf(t, body, 2,
+		"history rows = %d, want 2", len(body))
+	require.EqualValuesf(t, "Bank A", body[0].Bank,
+		"first bank = %q, want Bank A", body[0].Bank)
+
 }
 
 func TestRatesHistoryHandlerReturnsEmptyArrayWhenNoRows(t *testing.T) {
@@ -410,14 +399,13 @@ func TestRatesHistoryHandlerReturnsEmptyArrayWhenNoRows(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
 	body := decodeResponseData[[]domain.CurrencyRate](t, rec)
-	if len(body) != 0 {
-		t.Fatalf("history rows = %d, want empty", len(body))
-	}
+	require.Lenf(t, body, 0,
+		"history rows = %d, want empty", len(body))
+
 }
 
 func TestRatesHistoryByDateHandlerReturnsHistory(t *testing.T) {
@@ -431,32 +419,26 @@ func TestRatesHistoryByDateHandlerReturnsHistory(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
+	require.EqualValuesf(t, "USD", history.currency,
+		"currency passed to history = %q, want USD", history.currency)
+	require.EqualValuesf(t, 10, history.limit,
+		"limit passed to history = %d, want 10", history.limit)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if history.currency != "USD" {
-		t.Fatalf("currency passed to history = %q, want USD", history.currency)
-	}
-	if history.limit != 10 {
-		t.Fatalf("limit passed to history = %d, want 10", history.limit)
-	}
 	wantFrom := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	wantTo := time.Date(2026, 6, 6, 0, 0, 0, 0, time.UTC)
-	if !history.from.Equal(wantFrom) {
-		t.Fatalf("from = %v, want %v", history.from, wantFrom)
-	}
-	if !history.to.Equal(wantTo) {
-		t.Fatalf("to = %v, want %v", history.to, wantTo)
-	}
+	require.Truef(t, history.from.Equal(wantFrom),
+		"from = %v, want %v", history.from, wantFrom)
+	require.Truef(t, history.to.Equal(wantTo),
+		"to = %v, want %v", history.to, wantTo)
 
 	body := decodeResponseData[[]domain.CurrencyRate](t, rec)
-	if len(body) != 1 {
-		t.Fatalf("history rows = %d, want 1", len(body))
-	}
-	if body[0].Bank != "Bank A" {
-		t.Fatalf("first bank = %q, want Bank A", body[0].Bank)
-	}
+	require.Lenf(t, body, 1,
+		"history rows = %d, want 1", len(body))
+	require.EqualValuesf(t, "Bank A", body[0].Bank,
+		"first bank = %q, want Bank A", body[0].Bank)
+
 }
 
 func TestRatesHistoryByDateHandlerAcceptsRFC3339Range(t *testing.T) {
@@ -465,18 +447,16 @@ func TestRatesHistoryByDateHandlerAcceptsRFC3339Range(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
 	wantFrom := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	wantTo := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	if !history.from.Equal(wantFrom) {
-		t.Fatalf("from = %v, want %v", history.from, wantFrom)
-	}
-	if !history.to.Equal(wantTo) {
-		t.Fatalf("to = %v, want %v", history.to, wantTo)
-	}
+	require.Truef(t, history.from.Equal(wantFrom),
+		"from = %v, want %v", history.from, wantFrom)
+	require.Truef(t, history.to.Equal(wantTo),
+		"to = %v, want %v", history.to, wantTo)
+
 }
 
 func TestRatesHistoryByDateHandlerRequiresDateRange(t *testing.T) {
@@ -497,10 +477,9 @@ func TestRatesHistoryByDateHandlerRequiresDateRange(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{}, nil).ServeHTTP(rec, req)
+			require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+				"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-			}
 			assertErrorResponse(t, rec, tt.want)
 		})
 	}
@@ -511,10 +490,9 @@ func TestRatesHistoryByDateHandlerReportsUnconfiguredStore(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusInternalServerError, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusInternalServerError)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
 	assertErrorResponse(t, rec, "rate history store is not configured")
 }
 
@@ -523,10 +501,9 @@ func TestRatesHistoryHandlerRequiresCurrency(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency query parameter is required")
 }
 
@@ -535,10 +512,9 @@ func TestRatesHistoryHandlerRequiresNonBlankCurrency(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency query parameter is required")
 }
 
@@ -547,10 +523,9 @@ func TestRatesHistoryHandlerRejectsInvalidLimit(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "limit must be a positive integer")
 }
 
@@ -560,13 +535,11 @@ func TestRatesHistoryHandlerCapsLimit(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
+	require.EqualValuesf(t, storage.MaxHistoryLimit, history.limit,
+		"limit passed to history = %d, want %d", history.limit, storage.MaxHistoryLimit)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if history.limit != storage.MaxHistoryLimit {
-		t.Fatalf("limit passed to history = %d, want %d", history.limit, storage.MaxHistoryLimit)
-	}
 }
 
 func TestRatesHistoryHandlerTrimsLimitWhitespace(t *testing.T) {
@@ -575,13 +548,11 @@ func TestRatesHistoryHandlerTrimsLimitWhitespace(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
+	require.EqualValuesf(t, 2, history.limit,
+		"limit passed to history = %d, want 2", history.limit)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if history.limit != 2 {
-		t.Fatalf("limit passed to history = %d, want 2", history.limit)
-	}
 }
 
 func TestRatesHistoryHandlerReturnsBadRequestForInvalidCurrency(t *testing.T) {
@@ -589,10 +560,9 @@ func TestRatesHistoryHandlerReturnsBadRequestForInvalidCurrency(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{err: domain.ErrInvalidCurrencyCode}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency must be a 3-letter code")
 }
 
@@ -601,10 +571,9 @@ func TestRatesHistoryHandlerValidatesCurrencyBeforeHistoryStore(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, nil, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusBadRequest, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusBadRequest)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
 	assertErrorResponse(t, rec, "currency must be a 3-letter code")
 }
 
@@ -614,10 +583,9 @@ func TestRatesHistoryHandlerReportsTypedNilHistoryStore(t *testing.T) {
 
 	var history *fakeRateHistoryReader
 	NewRouterWithHistory(&fakeRateFetcher{}, history, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusInternalServerError, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusInternalServerError)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
 	assertErrorResponse(t, rec, "rate history store is not configured")
 }
 
@@ -626,10 +594,9 @@ func TestRatesHistoryHandlerReturnsGatewayTimeoutOnDeadline(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{err: context.DeadlineExceeded}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusGatewayTimeout, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusGatewayTimeout)
 
-	if rec.Code != http.StatusGatewayTimeout {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusGatewayTimeout)
-	}
 	assertErrorResponse(t, rec, "request timed out")
 }
 
@@ -638,10 +605,9 @@ func TestRatesHistoryHandlerReturnsClientClosedRequestOnCancellation(t *testing.
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{err: context.Canceled}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, statusClientClosedRequest, rec.Code,
+		"status = %d, want %d", rec.Code, statusClientClosedRequest)
 
-	if rec.Code != statusClientClosedRequest {
-		t.Fatalf("status = %d, want %d", rec.Code, statusClientClosedRequest)
-	}
 	assertErrorResponse(t, rec, "request canceled")
 }
 
@@ -650,10 +616,9 @@ func TestRatesHistoryHandlerReportsUnconfiguredStore(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouter(&fakeRateFetcher{}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusInternalServerError, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusInternalServerError)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
 	assertErrorResponse(t, rec, "rate history store is not configured")
 }
 
@@ -662,10 +627,9 @@ func TestRatesHistoryHandlerReportsStoreConfigurationError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	NewRouterWithHistory(&fakeRateFetcher{}, &fakeRateHistoryReader{err: storage.ErrStoreNotConfigured}, nil).ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusInternalServerError, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusInternalServerError)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
 	assertErrorResponse(t, rec, "rate history store is not configured")
 }
 
@@ -677,10 +641,9 @@ func TestRequestLoggerHandlesNilLogger(t *testing.T) {
 	}))
 
 	handler.ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
 }
 
 func TestRateLimitMiddlewareReturnsTooManyRequests(t *testing.T) {
@@ -691,21 +654,18 @@ func TestRateLimitMiddlewareReturnsTooManyRequests(t *testing.T) {
 	firstReq.RemoteAddr = "192.0.2.1:1234"
 	firstRec := httptest.NewRecorder()
 	handler.ServeHTTP(firstRec, firstReq)
-
-	if firstRec.Code != http.StatusOK {
-		t.Fatalf("first status = %d, want %d", firstRec.Code, http.StatusOK)
-	}
+	require.EqualValuesf(t, http.StatusOK, firstRec.Code,
+		"first status = %d, want %d", firstRec.Code, http.StatusOK)
 
 	secondReq := httptest.NewRequest(http.MethodGet, "/health", nil)
 	secondReq.RemoteAddr = "192.0.2.1:5678"
 	secondRec := httptest.NewRecorder()
 	handler.ServeHTTP(secondRec, secondReq)
+	require.EqualValuesf(t, http.StatusTooManyRequests, secondRec.Code,
+		"second status = %d, want %d", secondRec.Code, http.StatusTooManyRequests)
 
-	if secondRec.Code != http.StatusTooManyRequests {
-		t.Fatalf("second status = %d, want %d", secondRec.Code, http.StatusTooManyRequests)
-	}
 	if got := secondRec.Header().Get("Retry-After"); got != "60" {
-		t.Fatalf("Retry-After = %q, want 60", got)
+		require.FailNowf(t, "test failed", "Retry-After = %q, want 60", got)
 	}
 	assertErrorResponse(t, secondRec, "rate limit exceeded")
 }
@@ -723,10 +683,9 @@ func TestRateLimitMiddlewareUsesClientIP(t *testing.T) {
 	secondReq.RemoteAddr = "192.0.2.2:1234"
 	secondRec := httptest.NewRecorder()
 	handler.ServeHTTP(secondRec, secondReq)
+	require.EqualValuesf(t, http.StatusOK, secondRec.Code,
+		"second status = %d, want %d", secondRec.Code, http.StatusOK)
 
-	if secondRec.Code != http.StatusOK {
-		t.Fatalf("second status = %d, want %d", secondRec.Code, http.StatusOK)
-	}
 }
 
 func TestClientIPReturnsHostFromRemoteAddr(t *testing.T) {
@@ -734,7 +693,7 @@ func TestClientIPReturnsHostFromRemoteAddr(t *testing.T) {
 	req.RemoteAddr = "192.0.2.1:1234"
 
 	if got := clientIP(req); got != "192.0.2.1" {
-		t.Fatalf("clientIP() = %q, want 192.0.2.1", got)
+		require.FailNowf(t, "test failed", "clientIP() = %q, want 192.0.2.1", got)
 	}
 }
 
@@ -743,7 +702,7 @@ func TestClientIPFallsBackToRemoteAddrWithoutPort(t *testing.T) {
 	req.RemoteAddr = "192.0.2.1"
 
 	if got := clientIP(req); got != "192.0.2.1" {
-		t.Fatalf("clientIP() = %q, want 192.0.2.1", got)
+		require.FailNowf(t, "test failed", "clientIP() = %q, want 192.0.2.1", got)
 	}
 }
 
@@ -752,7 +711,7 @@ func TestClientIPTrimsRemoteAddrFallback(t *testing.T) {
 	req.RemoteAddr = " 192.0.2.1 "
 
 	if got := clientIP(req); got != "192.0.2.1" {
-		t.Fatalf("clientIP() = %q, want 192.0.2.1", got)
+		require.FailNowf(t, "test failed", "clientIP() = %q, want 192.0.2.1", got)
 	}
 }
 
@@ -761,7 +720,7 @@ func TestClientIPUsesExplicitFallbackForEmptyRemoteAddr(t *testing.T) {
 	req.RemoteAddr = ""
 
 	if got := clientIP(req); got != unknownClientIP {
-		t.Fatalf("clientIP() = %q, want %q", got, unknownClientIP)
+		require.FailNowf(t, "test failed", "clientIP() = %q, want %q", got, unknownClientIP)
 	}
 }
 
@@ -779,21 +738,19 @@ func TestMetricsEndpointExposesObservedRequests(t *testing.T) {
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	metricsRec := httptest.NewRecorder()
 	handler.ServeHTTP(metricsRec, metricsReq)
+	require.EqualValuesf(t, http.StatusOK, metricsRec.Code,
+		"metrics status = %d, want %d", metricsRec.Code, http.StatusOK)
 
-	if metricsRec.Code != http.StatusOK {
-		t.Fatalf("metrics status = %d, want %d", metricsRec.Code, http.StatusOK)
-	}
 	if got := metricsRec.Header().Get("Content-Type"); got != "text/plain; version=0.0.4; charset=utf-8" {
-		t.Fatalf("metrics Content-Type = %q, want Prometheus text", got)
+		require.FailNowf(t, "test failed", "metrics Content-Type = %q, want Prometheus text", got)
 	}
 
 	body := metricsRec.Body.String()
-	if !strings.Contains(body, `http_requests_total{method="GET",path="/health",status="200"} 1`) {
-		t.Fatalf("metrics body missing health counter:\n%s", body)
-	}
-	if !strings.Contains(body, `http_requests_total{method="GET",path="/rates",status="400"} 1`) {
-		t.Fatalf("metrics body missing rates counter:\n%s", body)
-	}
+	require.Containsf(t, body, `http_requests_total{method="GET",path="/health",status="200"} 1`,
+		"metrics body missing health counter:\n%s", body)
+	require.Containsf(t, body, `http_requests_total{method="GET",path="/rates",status="400"} 1`,
+		"metrics body missing rates counter:\n%s", body)
+
 }
 
 func TestMetricsEndpointCollapsesUnmatchedPaths(t *testing.T) {
@@ -803,10 +760,9 @@ func TestMetricsEndpointCollapsesUnmatchedPaths(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
+		require.EqualValuesf(t, http.StatusNotFound, rec.Code,
+			"%s status = %d, want %d", path, rec.Code, http.StatusNotFound)
 
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("%s status = %d, want %d", path, rec.Code, http.StatusNotFound)
-		}
 	}
 
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -814,12 +770,11 @@ func TestMetricsEndpointCollapsesUnmatchedPaths(t *testing.T) {
 	handler.ServeHTTP(metricsRec, metricsReq)
 
 	body := metricsRec.Body.String()
-	if !strings.Contains(body, `http_requests_total{method="GET",path="unmatched",status="404"} 2`) {
-		t.Fatalf("metrics body missing collapsed unmatched counter:\n%s", body)
-	}
-	if strings.Contains(body, `path="/missing-one"`) || strings.Contains(body, `path="/missing-two"`) {
-		t.Fatalf("metrics body included raw unmatched paths:\n%s", body)
-	}
+	require.Containsf(t, body, `http_requests_total{method="GET",path="unmatched",status="404"} 2`,
+		"metrics body missing collapsed unmatched counter:\n%s", body)
+	require.Falsef(t, strings.Contains(body, `path="/missing-one"`) || strings.Contains(body, `path="/missing-two"`),
+		"metrics body included raw unmatched paths:\n%s", body)
+
 }
 
 func TestMetricsEndpointUsesKnownPathForRateLimitedRoutes(t *testing.T) {
@@ -835,18 +790,16 @@ func TestMetricsEndpointUsesKnownPathForRateLimitedRoutes(t *testing.T) {
 	secondReq.RemoteAddr = "192.0.2.10:5678"
 	secondRec := httptest.NewRecorder()
 	handler.ServeHTTP(secondRec, secondReq)
-
-	if secondRec.Code != http.StatusTooManyRequests {
-		t.Fatalf("second status = %d, want %d", secondRec.Code, http.StatusTooManyRequests)
-	}
+	require.EqualValuesf(t, http.StatusTooManyRequests, secondRec.Code,
+		"second status = %d, want %d", secondRec.Code, http.StatusTooManyRequests)
 
 	var body strings.Builder
 	if err := metrics.WritePrometheus(&body); err != nil {
-		t.Fatalf("WritePrometheus() error = %v", err)
+		require.FailNowf(t, "test failed", "WritePrometheus() error = %v", err)
 	}
-	if !strings.Contains(body.String(), `http_requests_total{method="GET",path="/health",status="429"} 1`) {
-		t.Fatalf("metrics body missing rate-limited health counter:\n%s", body.String())
-	}
+	require.Containsf(t, body.String(), `http_requests_total{method="GET",path="/health",status="429"} 1`,
+		"metrics body missing rate-limited health counter:\n%s", body.String())
+
 }
 
 func TestMetricsEndpointCollapsesRateLimitedUnknownPaths(t *testing.T) {
@@ -862,21 +815,18 @@ func TestMetricsEndpointCollapsesRateLimitedUnknownPaths(t *testing.T) {
 	secondReq.RemoteAddr = "192.0.2.20:5678"
 	secondRec := httptest.NewRecorder()
 	handler.ServeHTTP(secondRec, secondReq)
-
-	if secondRec.Code != http.StatusTooManyRequests {
-		t.Fatalf("second status = %d, want %d", secondRec.Code, http.StatusTooManyRequests)
-	}
+	require.EqualValuesf(t, http.StatusTooManyRequests, secondRec.Code,
+		"second status = %d, want %d", secondRec.Code, http.StatusTooManyRequests)
 
 	var body strings.Builder
 	if err := metrics.WritePrometheus(&body); err != nil {
-		t.Fatalf("WritePrometheus() error = %v", err)
+		require.FailNowf(t, "test failed", "WritePrometheus() error = %v", err)
 	}
-	if !strings.Contains(body.String(), `http_requests_total{method="GET",path="unmatched",status="429"} 1`) {
-		t.Fatalf("metrics body missing collapsed rate-limited unmatched counter:\n%s", body.String())
-	}
-	if strings.Contains(body.String(), `path="/missing-two"`) {
-		t.Fatalf("metrics body included raw rate-limited path:\n%s", body.String())
-	}
+	require.Containsf(t, body.String(), `http_requests_total{method="GET",path="unmatched",status="429"} 1`,
+		"metrics body missing collapsed rate-limited unmatched counter:\n%s", body.String())
+	require.Falsef(t, strings.Contains(body.String(), `path="/missing-two"`),
+		"metrics body included raw rate-limited path:\n%s", body.String())
+
 }
 
 func TestRequestMetricsKeepsFirstWrittenStatus(t *testing.T) {
@@ -889,21 +839,18 @@ func TestRequestMetricsKeepsFirstWrittenStatus(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/double-header", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
-	}
+	require.EqualValuesf(t, http.StatusCreated, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusCreated)
 
 	var body strings.Builder
 	if err := metrics.WritePrometheus(&body); err != nil {
-		t.Fatalf("WritePrometheus() error = %v", err)
+		require.FailNowf(t, "test failed", "WritePrometheus() error = %v", err)
 	}
-	if !strings.Contains(body.String(), `http_requests_total{method="POST",path="/double-header",status="201"} 1`) {
-		t.Fatalf("metrics body missing first status counter:\n%s", body.String())
-	}
-	if strings.Contains(body.String(), `status="500"`) {
-		t.Fatalf("metrics body recorded later status:\n%s", body.String())
-	}
+	require.Containsf(t, body.String(), `http_requests_total{method="POST",path="/double-header",status="201"} 1`,
+		"metrics body missing first status counter:\n%s", body.String())
+	require.Falsef(t, strings.Contains(body.String(), `status="500"`),
+		"metrics body recorded later status:\n%s", body.String())
+
 }
 
 func TestStatusRecorderWriteRecordsImplicitOK(t *testing.T) {
@@ -911,18 +858,15 @@ func TestStatusRecorderWriteRecordsImplicitOK(t *testing.T) {
 	wrapped := &statusRecorder{ResponseWriter: rec}
 
 	if _, err := wrapped.Write([]byte("ok")); err != nil {
-		t.Fatalf("Write() error = %v", err)
+		require.FailNowf(t, "test failed", "Write() error = %v", err)
 	}
+	require.EqualValuesf(t, http.StatusOK, wrapped.status,
+		"recorded status = %d, want %d", wrapped.status, http.StatusOK)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"response status = %d, want %d", rec.Code, http.StatusOK)
+	require.EqualValuesf(t, "ok", rec.Body.String(),
+		"body = %q, want ok", rec.Body.String())
 
-	if wrapped.status != http.StatusOK {
-		t.Fatalf("recorded status = %d, want %d", wrapped.status, http.StatusOK)
-	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("response status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if rec.Body.String() != "ok" {
-		t.Fatalf("body = %q, want ok", rec.Body.String())
-	}
 }
 
 func TestStatusRecorderSupportsResponseControllerFlush(t *testing.T) {
@@ -930,11 +874,11 @@ func TestStatusRecorderSupportsResponseControllerFlush(t *testing.T) {
 	wrapped := &statusRecorder{ResponseWriter: rec, status: http.StatusOK}
 
 	if err := http.NewResponseController(wrapped).Flush(); err != nil {
-		t.Fatalf("Flush() error = %v", err)
+		require.FailNowf(t, "test failed", "Flush() error = %v", err)
 	}
-	if !rec.Flushed {
-		t.Fatal("wrapped response writer did not flush underlying recorder")
-	}
+	require.True(t, rec.Flushed,
+		"wrapped response writer did not flush underlying recorder")
+
 }
 
 func TestMetricsEndpointExposesSharedCollectorCounters(t *testing.T) {
@@ -946,18 +890,15 @@ func TestMetricsEndpointExposesSharedCollectorCounters(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("metrics status = %d, want %d", rec.Code, http.StatusOK)
-	}
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"metrics status = %d, want %d", rec.Code, http.StatusOK)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `rate_cache_hits_total{currency="USD"} 1`) {
-		t.Fatalf("metrics body missing cache hit counter:\n%s", body)
-	}
-	if !strings.Contains(body, `bank_request_errors_total{bank="Offline Bank"} 1`) {
-		t.Fatalf("metrics body missing bank error counter:\n%s", body)
-	}
+	require.Containsf(t, body, `rate_cache_hits_total{currency="USD"} 1`,
+		"metrics body missing cache hit counter:\n%s", body)
+	require.Containsf(t, body, `bank_request_errors_total{bank="Offline Bank"} 1`,
+		"metrics body missing bank error counter:\n%s", body)
+
 }
 
 func TestPprofIndexIsMounted(t *testing.T) {
@@ -966,13 +907,11 @@ func TestPprofIndexIsMounted(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"pprof status = %d, want %d", rec.Code, http.StatusOK)
+	require.Containsf(t, rec.Body.String(), "goroutine",
+		"pprof body missing goroutine profile link:\n%s", rec.Body.String())
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("pprof status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if !strings.Contains(rec.Body.String(), "goroutine") {
-		t.Fatalf("pprof body missing goroutine profile link:\n%s", rec.Body.String())
-	}
 }
 
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, want string) {
@@ -980,14 +919,13 @@ func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, want stri
 
 	var body responseEnvelope
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
+		require.FailNowf(t, "test failed", "decode response: %v", err)
 	}
-	if body.Error != want {
-		t.Fatalf("error body = %q, want %q", body.Error, want)
-	}
-	if body.Data != nil {
-		t.Fatalf("error response data = %#v, want nil", body.Data)
-	}
+	require.EqualValuesf(t, want, body.Error,
+		"error body = %q, want %q", body.Error, want)
+	require.Nilf(t, body.Data,
+		"error response data = %#v, want nil", body.Data)
+
 }
 
 func decodeResponseData[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
@@ -997,7 +935,7 @@ func decodeResponseData[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 		Data T `json:"data"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
+		require.FailNowf(t, "test failed", "decode response: %v", err)
 	}
 	return body.Data
 }

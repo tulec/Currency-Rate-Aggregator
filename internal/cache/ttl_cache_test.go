@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTTLCacheReturnsValueWithinTTL(t *testing.T) {
@@ -19,15 +20,13 @@ func TestTTLCacheReturnsValueWithinTTL(t *testing.T) {
 	})
 
 	got, ok := cache.Get("USD")
-	if !ok {
-		t.Fatal("Get() ok = false, want true")
-	}
-	if got.Currency != "USD" {
-		t.Fatalf("Currency = %q, want USD", got.Currency)
-	}
-	if len(got.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(got.Sources))
-	}
+	require.True(t, ok,
+		"Get() ok = false, want true")
+	require.EqualValuesf(t, "USD", got.Currency,
+		"Currency = %q, want USD", got.Currency)
+	require.Lenf(t, got.Sources, 1,
+		"len(Sources) = %d, want 1", len(got.Sources))
+
 }
 
 func TestTTLCacheExpiresValueAfterTTL(t *testing.T) {
@@ -40,7 +39,7 @@ func TestTTLCacheExpiresValueAfterTTL(t *testing.T) {
 	now = now.Add(time.Minute)
 
 	if _, ok := cache.Get("USD"); ok {
-		t.Fatal("Get() ok = true, want false")
+		require.FailNow(t, "test failed", "Get() ok = true, want false")
 	}
 }
 
@@ -57,18 +56,17 @@ func TestTTLCacheCopiesSources(t *testing.T) {
 	source.Sources[0].Bank = "Changed"
 
 	got, ok := cache.Get("USD")
-	if !ok {
-		t.Fatal("Get() ok = false, want true")
-	}
+	require.True(t, ok,
+		"Get() ok = false, want true")
+
 	got.Sources[0].Bank = "Mutated"
 
 	gotAgain, ok := cache.Get("USD")
-	if !ok {
-		t.Fatal("Get() second ok = false, want true")
-	}
-	if gotAgain.Sources[0].Bank != "Bank A" {
-		t.Fatalf("cached source bank = %q, want Bank A", gotAgain.Sources[0].Bank)
-	}
+	require.True(t, ok,
+		"Get() second ok = false, want true")
+	require.EqualValuesf(t, "Bank A", gotAgain.Sources[0].Bank,
+		"cached source bank = %q, want Bank A", gotAgain.Sources[0].Bank)
+
 }
 
 func TestTTLCacheIsConcurrentSafe(t *testing.T) {

@@ -2,13 +2,13 @@ package bankclient
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFrankfurterClientFetchRate(t *testing.T) {
@@ -16,7 +16,7 @@ func TestFrankfurterClientFetchRate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		if got, want := r.Header.Get("Accept"), "application/json"; got != want {
-			t.Fatalf("Accept = %q, want %q", got, want)
+			require.FailNowf(t, "test failed", "Accept = %q, want %q", got, want)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"base":"USD","quote":"RUB","date":"2026-06-05","rate":74.2956}`))
@@ -25,26 +25,21 @@ func TestFrankfurterClientFetchRate(t *testing.T) {
 
 	client := NewFrankfurterClient(server.URL+"/v2", server.Client())
 	rate, err := client.FetchRate(context.Background(), " usd ")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.EqualValuesf(t, "/v2/rate/USD/RUB", gotPath,
+		"path = %q, want /v2/rate/USD/RUB", gotPath)
+	require.EqualValuesf(t, "USD", rate.Currency,
+		"Currency = %q, want USD", rate.Currency)
+	require.EqualValuesf(t, frankfurterBankName, rate.Bank,
+		"Bank = %q, want %s", rate.Bank, frankfurterBankName)
+	require.Falsef(t, rate.Buy != 74.2956 || rate.Sell != 74.2956,
+		"Buy/Sell = %v/%v, want 74.2956/74.2956", rate.Buy, rate.Sell)
 
-	if gotPath != "/v2/rate/USD/RUB" {
-		t.Fatalf("path = %q, want /v2/rate/USD/RUB", gotPath)
-	}
-	if rate.Currency != "USD" {
-		t.Fatalf("Currency = %q, want USD", rate.Currency)
-	}
-	if rate.Bank != frankfurterBankName {
-		t.Fatalf("Bank = %q, want %s", rate.Bank, frankfurterBankName)
-	}
-	if rate.Buy != 74.2956 || rate.Sell != 74.2956 {
-		t.Fatalf("Buy/Sell = %v/%v, want 74.2956/74.2956", rate.Buy, rate.Sell)
-	}
 	wantFetchedAt := time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC)
-	if !rate.FetchedAt.Equal(wantFetchedAt) {
-		t.Fatalf("FetchedAt = %v, want %v", rate.FetchedAt, wantFetchedAt)
-	}
+	require.Truef(t, rate.FetchedAt.Equal(wantFetchedAt),
+		"FetchedAt = %v, want %v", rate.FetchedAt, wantFetchedAt)
+
 }
 
 func TestFrankfurterClientFetchRateReturnsRubBaseRate(t *testing.T) {
@@ -53,16 +48,13 @@ func TestFrankfurterClientFetchRateReturnsRubBaseRate(t *testing.T) {
 	client.now = func() time.Time { return now }
 
 	rate, err := client.FetchRate(context.Background(), "rub")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.Falsef(t, rate.Currency != "RUB" || rate.Buy != 1 || rate.Sell != 1,
+		"rate = %+v, want RUB 1/1", rate)
+	require.Truef(t, rate.FetchedAt.Equal(now),
+		"FetchedAt = %v, want %v", rate.FetchedAt, now)
 
-	if rate.Currency != "RUB" || rate.Buy != 1 || rate.Sell != 1 {
-		t.Fatalf("rate = %+v, want RUB 1/1", rate)
-	}
-	if !rate.FetchedAt.Equal(now) {
-		t.Fatalf("FetchedAt = %v, want %v", rate.FetchedAt, now)
-	}
 }
 
 func TestFrankfurterClientFetchRateReturnsCurrencyNotFound(t *testing.T) {
@@ -73,9 +65,9 @@ func TestFrankfurterClientFetchRateReturnsCurrencyNotFound(t *testing.T) {
 
 	client := NewFrankfurterClient(server.URL, server.Client())
 	_, err := client.FetchRate(context.Background(), "EUR")
-	if !errors.Is(err, domain.ErrCurrencyNotFound) {
-		t.Fatalf("FetchRate() error = %v, want ErrCurrencyNotFound", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrCurrencyNotFound,
+		"FetchRate() error = %v, want ErrCurrencyNotFound", err)
+
 }
 
 func TestFrankfurterClientFetchRateReportsHTTPErrorAsBankUnavailable(t *testing.T) {
@@ -86,9 +78,9 @@ func TestFrankfurterClientFetchRateReportsHTTPErrorAsBankUnavailable(t *testing.
 
 	client := NewFrankfurterClient(server.URL, server.Client())
 	_, err := client.FetchRate(context.Background(), "USD")
-	if !errors.Is(err, domain.ErrBankUnavailable) {
-		t.Fatalf("FetchRate() error = %v, want ErrBankUnavailable", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrBankUnavailable,
+		"FetchRate() error = %v, want ErrBankUnavailable", err)
+
 }
 
 func TestFrankfurterClientFetchRateReportsMalformedResponse(t *testing.T) {
@@ -112,9 +104,9 @@ func TestFrankfurterClientFetchRateReportsMalformedResponse(t *testing.T) {
 
 			client := NewFrankfurterClient(server.URL, server.Client())
 			_, err := client.FetchRate(context.Background(), "USD")
-			if !errors.Is(err, errFrankfurterMalformedResponse) {
-				t.Fatalf("FetchRate() error = %v, want malformed response", err)
-			}
+			require.ErrorIsf(t, err, errFrankfurterMalformedResponse,
+				"FetchRate() error = %v, want malformed response", err)
+
 		})
 	}
 }
@@ -125,7 +117,7 @@ func TestFrankfurterClientRespectsContextCancellation(t *testing.T) {
 
 	client := NewFrankfurterClient("http://127.0.0.1/not-used", nil)
 	_, err := client.FetchRate(ctx, "USD")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("FetchRate() error = %v, want context.Canceled", err)
-	}
+	require.ErrorIsf(t, err, context.Canceled,
+		"FetchRate() error = %v, want context.Canceled", err)
+
 }

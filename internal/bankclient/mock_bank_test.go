@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMockBankFetchRate(t *testing.T) {
@@ -16,25 +17,19 @@ func TestMockBankFetchRate(t *testing.T) {
 	})
 
 	rate, err := client.FetchRate(context.Background(), " USD ")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.EqualValuesf(t, "USD", rate.Currency,
+		"Currency = %q, want USD", rate.Currency)
+	require.EqualValuesf(t, "Test Bank", rate.Bank,
+		"Bank = %q, want Test Bank", rate.Bank)
+	require.EqualValuesf(t, 91.2, rate.Buy,
+		"Buy = %v, want 91.2", rate.Buy)
+	require.EqualValuesf(t, 92.1, rate.Sell,
+		"Sell = %v, want 92.1", rate.Sell)
+	require.Truef(t, rate.FetchedAt.Equal(now),
+		"FetchedAt = %v, want %v", rate.FetchedAt, now)
 
-	if rate.Currency != "USD" {
-		t.Fatalf("Currency = %q, want USD", rate.Currency)
-	}
-	if rate.Bank != "Test Bank" {
-		t.Fatalf("Bank = %q, want Test Bank", rate.Bank)
-	}
-	if rate.Buy != 91.2 {
-		t.Fatalf("Buy = %v, want 91.2", rate.Buy)
-	}
-	if rate.Sell != 92.1 {
-		t.Fatalf("Sell = %v, want 92.1", rate.Sell)
-	}
-	if !rate.FetchedAt.Equal(now) {
-		t.Fatalf("FetchedAt = %v, want %v", rate.FetchedAt, now)
-	}
 }
 
 func TestMockBankFetchRateNormalizesFetchedAtToUTC(t *testing.T) {
@@ -45,16 +40,13 @@ func TestMockBankFetchRateNormalizesFetchedAtToUTC(t *testing.T) {
 	})
 
 	rate, err := client.FetchRate(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.EqualValuesf(t, time.UTC, rate.FetchedAt.Location(),
+		"FetchedAt location = %v, want UTC", rate.FetchedAt.Location())
+	require.Truef(t, rate.FetchedAt.Equal(fetchedAt),
+		"FetchedAt = %v, want same instant as %v", rate.FetchedAt, fetchedAt)
 
-	if rate.FetchedAt.Location() != time.UTC {
-		t.Fatalf("FetchedAt location = %v, want UTC", rate.FetchedAt.Location())
-	}
-	if !rate.FetchedAt.Equal(fetchedAt) {
-		t.Fatalf("FetchedAt = %v, want same instant as %v", rate.FetchedAt, fetchedAt)
-	}
 }
 
 func TestMockBankFetchRateReturnsCurrencyError(t *testing.T) {
@@ -63,22 +55,22 @@ func TestMockBankFetchRateReturnsCurrencyError(t *testing.T) {
 	})
 
 	_, err := client.FetchRate(context.Background(), "JPY")
-	if !errors.Is(err, domain.ErrCurrencyNotFound) {
-		t.Fatalf("FetchRate() error = %v, want ErrCurrencyNotFound", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrCurrencyNotFound,
+		"FetchRate() error = %v, want ErrCurrencyNotFound", err)
+
 }
 
 func TestMockBankNilReceiverReturnsBankUnavailable(t *testing.T) {
 	var client *MockBank
 
 	if got := client.Name(); got != unknownBankName {
-		t.Fatalf("Name() = %q, want %q", got, unknownBankName)
+		require.FailNowf(t, "test failed", "Name() = %q, want %q", got, unknownBankName)
 	}
 
 	_, err := client.FetchRate(context.Background(), "USD")
-	if !errors.Is(err, domain.ErrBankUnavailable) {
-		t.Fatalf("FetchRate() error = %v, want ErrBankUnavailable", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrBankUnavailable,
+		"FetchRate() error = %v, want ErrBankUnavailable", err)
+
 }
 
 func TestMockBankNilReceiverRespectsContextCancellation(t *testing.T) {
@@ -87,21 +79,20 @@ func TestMockBankNilReceiverRespectsContextCancellation(t *testing.T) {
 	cancel()
 
 	_, err := client.FetchRate(ctx, "USD")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("FetchRate() error = %v, want context.Canceled", err)
-	}
+	require.ErrorIsf(t, err, context.Canceled,
+		"FetchRate() error = %v, want context.Canceled", err)
+
 }
 
 func TestFailingMockBankReturnsBankError(t *testing.T) {
 	client := NewFailingMockBank("Offline Bank", domain.ErrBankUnavailable)
 
 	_, err := client.FetchRate(context.Background(), "USD")
-	if !errors.Is(err, domain.ErrBankUnavailable) {
-		t.Fatalf("FetchRate() error = %v, want ErrBankUnavailable", err)
-	}
-	if err.Error() != domain.ErrBankUnavailable.Error() {
-		t.Fatalf("FetchRate() error = %q, want %q", err.Error(), domain.ErrBankUnavailable.Error())
-	}
+	require.ErrorIsf(t, err, domain.ErrBankUnavailable,
+		"FetchRate() error = %v, want ErrBankUnavailable", err)
+	require.EqualValuesf(t, domain.ErrBankUnavailable.Error(), err.Error(),
+		"FetchRate() error = %q, want %q", err.Error(), domain.ErrBankUnavailable.Error())
+
 }
 
 func TestFailingMockBankWrapsCustomErrorWithBankError(t *testing.T) {
@@ -109,12 +100,11 @@ func TestFailingMockBankWrapsCustomErrorWithBankError(t *testing.T) {
 	client := NewFailingMockBank("Offline Bank", sourceErr)
 
 	_, err := client.FetchRate(context.Background(), "USD")
-	if !errors.Is(err, domain.ErrBankUnavailable) {
-		t.Fatalf("FetchRate() error = %v, want ErrBankUnavailable", err)
-	}
-	if !errors.Is(err, sourceErr) {
-		t.Fatalf("FetchRate() error = %v, want source error", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrBankUnavailable,
+		"FetchRate() error = %v, want ErrBankUnavailable", err)
+	require.ErrorIsf(t, err, sourceErr,
+		"FetchRate() error = %v, want source error", err)
+
 }
 
 func TestMockBankRespectsContextCancellation(t *testing.T) {
@@ -126,17 +116,15 @@ func TestMockBankRespectsContextCancellation(t *testing.T) {
 	})
 
 	_, err := client.FetchRate(ctx, "USD")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("FetchRate() error = %v, want context.Canceled", err)
-	}
+	require.ErrorIsf(t, err, context.Canceled,
+		"FetchRate() error = %v, want context.Canceled", err)
+
 }
 
 func TestDefaultMockBanksContainSuccessfulAndFailingClients(t *testing.T) {
 	clients := DefaultMockBanks(time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC))
-
-	if len(clients) != 3 {
-		t.Fatalf("len(DefaultMockBanks()) = %d, want 3", len(clients))
-	}
+	require.Lenf(t, clients, 3,
+		"len(DefaultMockBanks()) = %d, want 3", len(clients))
 
 	var successCount int
 	var failureCount int
@@ -148,13 +136,11 @@ func TestDefaultMockBanksContainSuccessfulAndFailingClients(t *testing.T) {
 		}
 		successCount++
 	}
+	require.EqualValuesf(t, 2, successCount,
+		"successCount = %d, want 2", successCount)
+	require.EqualValuesf(t, 1, failureCount,
+		"failureCount = %d, want 1", failureCount)
 
-	if successCount != 2 {
-		t.Fatalf("successCount = %d, want 2", successCount)
-	}
-	if failureCount != 1 {
-		t.Fatalf("failureCount = %d, want 1", failureCount)
-	}
 }
 
 func TestDefaultLiveMockBanksUseFetchTime(t *testing.T) {
@@ -163,14 +149,11 @@ func TestDefaultLiveMockBanksUseFetchTime(t *testing.T) {
 	before := time.Now().UTC()
 	rate, err := clients[0].FetchRate(context.Background(), "USD")
 	after := time.Now().UTC()
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.False(t, rate.FetchedAt.IsZero(),
+		"FetchedAt is zero, want fetch timestamp")
+	require.Falsef(t, rate.FetchedAt.Before(before) || rate.FetchedAt.After(after),
+		"FetchedAt = %v, want between %v and %v", rate.FetchedAt, before, after)
 
-	if rate.FetchedAt.IsZero() {
-		t.Fatal("FetchedAt is zero, want fetch timestamp")
-	}
-	if rate.FetchedAt.Before(before) || rate.FetchedAt.After(after) {
-		t.Fatalf("FetchedAt = %v, want between %v and %v", rate.FetchedAt, before, after)
-	}
 }

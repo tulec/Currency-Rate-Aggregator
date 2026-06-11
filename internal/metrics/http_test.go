@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +21,7 @@ func TestHTTPMetricsWritesPrometheusCountersAndDurations(t *testing.T) {
 
 	var body strings.Builder
 	if err := metrics.WritePrometheus(&body); err != nil {
-		t.Fatalf("WritePrometheus() error = %v", err)
+		require.FailNowf(t, "test failed", "WritePrometheus() error = %v", err)
 	}
 
 	output := body.String()
@@ -47,12 +48,11 @@ func TestHTTPMetricsHandlerReturnsPrometheusText(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	metrics.ServeHTTP(rec, req)
+	require.EqualValuesf(t, http.StatusOK, rec.Code,
+		"status = %d, want %d", rec.Code, http.StatusOK)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
 	if got := rec.Header().Get("Content-Type"); got != "text/plain; version=0.0.4; charset=utf-8" {
-		t.Fatalf("Content-Type = %q, want Prometheus text", got)
+		require.FailNowf(t, "test failed", "Content-Type = %q, want Prometheus text", got)
 	}
 	assertContains(t, rec.Body.String(), `http_requests_total{method="GET",path="/rates",status="400"} 1`)
 }
@@ -65,7 +65,7 @@ func TestHTTPMetricsEscapesLabelValues(t *testing.T) {
 
 	var body strings.Builder
 	if err := metrics.WritePrometheus(&body); err != nil {
-		t.Fatalf("WritePrometheus() error = %v", err)
+		require.FailNowf(t, "test failed", "WritePrometheus() error = %v", err)
 	}
 
 	output := body.String()
@@ -76,8 +76,7 @@ func TestHTTPMetricsEscapesLabelValues(t *testing.T) {
 
 func assertContains(t *testing.T, haystack, needle string) {
 	t.Helper()
+	require.Containsf(t, haystack, needle,
+		"expected output to contain %q, got:\n%s", needle, haystack)
 
-	if !strings.Contains(haystack, needle) {
-		t.Fatalf("expected output to contain %q, got:\n%s", needle, haystack)
-	}
 }

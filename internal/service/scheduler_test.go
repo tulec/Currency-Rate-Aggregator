@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewSchedulerValidatesInputs(t *testing.T) {
@@ -32,7 +33,7 @@ func TestNewSchedulerValidatesInputs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := NewScheduler(tt.fetcher, tt.currencies, tt.interval, nil); err == nil {
-				t.Fatal("NewScheduler() error = nil, want error")
+				require.FailNow(t, "test failed", "NewScheduler() error = nil, want error")
 			}
 		})
 	}
@@ -60,16 +61,15 @@ func TestSchedulerRefreshesCurrenciesImmediatelyAndStops(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for scheduler to stop")
+		require.FailNow(t, "test failed", "timed out waiting for scheduler to stop")
 	}
 
 	calls := fetcher.callsSnapshot()
-	if len(calls) != 2 {
-		t.Fatalf("calls = %v, want two unique currencies", calls)
-	}
-	if calls[0] != "USD" || calls[1] != "EUR" {
-		t.Fatalf("calls = %v, want [USD EUR]", calls)
-	}
+	require.Lenf(t, calls, 2,
+		"calls = %v, want two unique currencies", calls)
+	require.Falsef(t, calls[0] != "USD" || calls[1] != "EUR",
+		"calls = %v, want [USD EUR]", calls)
+
 }
 
 func TestSchedulerContinuesAfterRefreshError(t *testing.T) {
@@ -96,13 +96,13 @@ func TestSchedulerContinuesAfterRefreshError(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for scheduler to stop")
+		require.FailNow(t, "test failed", "timed out waiting for scheduler to stop")
 	}
 
 	calls := fetcher.callsSnapshot()
-	if len(calls) != 2 || calls[0] != "USD" || calls[1] != "EUR" {
-		t.Fatalf("calls = %v, want scheduler to continue after USD error", calls)
-	}
+	require.Falsef(t, len(calls) != 2 || calls[0] != "USD" || calls[1] != "EUR",
+		"calls = %v, want scheduler to continue after USD error", calls)
+
 }
 
 func TestSchedulerRefreshesOnTicker(t *testing.T) {
@@ -128,7 +128,7 @@ func TestSchedulerRefreshesOnTicker(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for scheduler to stop")
+		require.FailNow(t, "test failed", "timed out waiting for scheduler to stop")
 	}
 }
 
@@ -145,11 +145,11 @@ func TestSchedulerUsesFreshRefreshWhenAvailable(t *testing.T) {
 	scheduler.refreshAll(context.Background())
 
 	calls := fetcher.callsSnapshot()
-	if len(calls) != 1 || calls[0] != "USD" {
-		t.Fatalf("refresh calls = %v, want [USD]", calls)
-	}
+	require.Falsef(t, len(calls) != 1 || calls[0] != "USD",
+		"refresh calls = %v, want [USD]", calls)
+
 	if got := fetcher.cachedFetchCalls(); got != 0 {
-		t.Fatalf("cached FetchRates calls = %d, want 0", got)
+		require.FailNowf(t, "test failed", "cached FetchRates calls = %d, want 0", got)
 	}
 }
 
@@ -158,9 +158,9 @@ func mustScheduler(t *testing.T, fetcher scheduledRateFetcher, currencies []stri
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	scheduler, err := NewScheduler(fetcher, currencies, interval, logger)
-	if err != nil {
-		t.Fatalf("NewScheduler() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"NewScheduler() error = %v", err)
+
 	return scheduler
 }
 
@@ -215,7 +215,7 @@ func (f *schedulerFetcher) waitForCalls(t *testing.T, count int) {
 		select {
 		case <-changed:
 		case <-timeout.C:
-			t.Fatalf("timed out waiting for %d calls; got %v", count, calls)
+			require.FailNowf(t, "test failed", "timed out waiting for %d calls; got %v", count, calls)
 		}
 	}
 }

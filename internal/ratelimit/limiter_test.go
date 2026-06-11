@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"github.com/stretchr/testify/require"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,77 +10,63 @@ import (
 
 func TestLimiterAllowsRequestsWithinLimit(t *testing.T) {
 	limiter := New(2)
+	require.True(t, limiter.Allow("127.0.0.1"),
+		"first request rejected")
+	require.True(t, limiter.Allow("127.0.0.1"),
+		"second request rejected")
 
-	if !limiter.Allow("127.0.0.1") {
-		t.Fatal("first request rejected")
-	}
-	if !limiter.Allow("127.0.0.1") {
-		t.Fatal("second request rejected")
-	}
 }
 
 func TestLimiterRejectsRequestsOverLimitForSameKey(t *testing.T) {
 	limiter := New(1)
+	require.True(t, limiter.Allow("127.0.0.1"),
+		"first request rejected")
+	require.False(t, limiter.Allow("127.0.0.1"),
+		"second request allowed, want rejected")
 
-	if !limiter.Allow("127.0.0.1") {
-		t.Fatal("first request rejected")
-	}
-	if limiter.Allow("127.0.0.1") {
-		t.Fatal("second request allowed, want rejected")
-	}
 }
 
 func TestLimiterTracksKeysIndependently(t *testing.T) {
 	limiter := New(1)
+	require.True(t, limiter.Allow("127.0.0.1"),
+		"first key rejected")
+	require.True(t, limiter.Allow("127.0.0.2"),
+		"second key rejected")
 
-	if !limiter.Allow("127.0.0.1") {
-		t.Fatal("first key rejected")
-	}
-	if !limiter.Allow("127.0.0.2") {
-		t.Fatal("second key rejected")
-	}
 }
 
 func TestLimiterResetsAfterWindow(t *testing.T) {
 	now := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
 	limiter := New(1)
 	limiter.now = func() time.Time { return now }
-
-	if !limiter.Allow("127.0.0.1") {
-		t.Fatal("first request rejected")
-	}
-	if limiter.Allow("127.0.0.1") {
-		t.Fatal("second request allowed before reset")
-	}
+	require.True(t, limiter.Allow("127.0.0.1"),
+		"first request rejected")
+	require.False(t, limiter.Allow("127.0.0.1"),
+		"second request allowed before reset")
 
 	now = now.Add(Window)
-	if !limiter.Allow("127.0.0.1") {
-		t.Fatal("request rejected after reset")
-	}
+	require.True(t, limiter.Allow("127.0.0.1"),
+		"request rejected after reset")
+
 }
 
 func TestLimiterRemovesExpiredKeys(t *testing.T) {
 	now := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
 	limiter := New(1)
 	limiter.now = func() time.Time { return now }
-
-	if !limiter.Allow("127.0.0.1") {
-		t.Fatal("first key rejected")
-	}
-	if !limiter.Allow("127.0.0.2") {
-		t.Fatal("second key rejected")
-	}
+	require.True(t, limiter.Allow("127.0.0.1"),
+		"first key rejected")
+	require.True(t, limiter.Allow("127.0.0.2"),
+		"second key rejected")
 
 	now = now.Add(Window)
-	if !limiter.Allow("127.0.0.3") {
-		t.Fatal("third key rejected after previous windows expired")
-	}
+	require.True(t, limiter.Allow("127.0.0.3"),
+		"third key rejected after previous windows expired")
+	require.Lenf(t, limiter.clients, 1,
+		"tracked clients = %d, want 1", len(limiter.clients))
 
-	if len(limiter.clients) != 1 {
-		t.Fatalf("tracked clients = %d, want 1", len(limiter.clients))
-	}
 	if _, ok := limiter.clients["127.0.0.3"]; !ok {
-		t.Fatal("current key was not retained")
+		require.FailNow(t, "test failed", "current key was not retained")
 	}
 }
 
@@ -106,6 +93,6 @@ func TestLimiterAllowsOnlyLimitUnderConcurrentRequests(t *testing.T) {
 	wg.Wait()
 
 	if got := atomic.LoadInt32(&allowed); got != limit {
-		t.Fatalf("allowed concurrent requests = %d, want %d", got, limit)
+		require.FailNowf(t, "test failed", "allowed concurrent requests = %d, want %d", got, limit)
 	}
 }

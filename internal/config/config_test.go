@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -27,52 +28,41 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("TBANK_RATE_CATEGORY", "")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"Load() error = %v", err)
+	require.EqualValuesf(t, ":8080", cfg.HTTPAddr,
+		"HTTPAddr = %q, want :8080", cfg.HTTPAddr)
+	require.EqualValuesf(t, 5*time.Second, cfg.ReadTimeout,
+		"ReadTimeout = %v, want 5s", cfg.ReadTimeout)
+	require.EqualValuesf(t, 10*time.Second, cfg.WriteTimeout,
+		"WriteTimeout = %v, want 10s", cfg.WriteTimeout)
+	require.EqualValuesf(t, 10*time.Second, cfg.ShutdownTimeout,
+		"ShutdownTimeout = %v, want 10s", cfg.ShutdownTimeout)
+	require.EqualValuesf(t, 30*time.Second, cfg.CacheTTL,
+		"CacheTTL = %v, want 30s", cfg.CacheTTL)
+	require.EqualValuesf(t, "", cfg.DatabaseURL,
+		"DatabaseURL = %q, want empty", cfg.DatabaseURL)
+	require.EqualValuesf(t, time.Minute, cfg.SchedulerInterval,
+		"SchedulerInterval = %v, want 1m", cfg.SchedulerInterval)
 
-	if cfg.HTTPAddr != ":8080" {
-		t.Fatalf("HTTPAddr = %q, want :8080", cfg.HTTPAddr)
-	}
-	if cfg.ReadTimeout != 5*time.Second {
-		t.Fatalf("ReadTimeout = %v, want 5s", cfg.ReadTimeout)
-	}
-	if cfg.WriteTimeout != 10*time.Second {
-		t.Fatalf("WriteTimeout = %v, want 10s", cfg.WriteTimeout)
-	}
-	if cfg.ShutdownTimeout != 10*time.Second {
-		t.Fatalf("ShutdownTimeout = %v, want 10s", cfg.ShutdownTimeout)
-	}
-	if cfg.CacheTTL != 30*time.Second {
-		t.Fatalf("CacheTTL = %v, want 30s", cfg.CacheTTL)
-	}
-	if cfg.DatabaseURL != "" {
-		t.Fatalf("DatabaseURL = %q, want empty", cfg.DatabaseURL)
-	}
-	if cfg.SchedulerInterval != time.Minute {
-		t.Fatalf("SchedulerInterval = %v, want 1m", cfg.SchedulerInterval)
-	}
 	if got, want := cfg.SchedulerCurrencies, []string{"USD", "EUR"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("SchedulerCurrencies = %v, want %v", got, want)
+		require.FailNowf(t, "test failed", "SchedulerCurrencies = %v, want %v", got, want)
 	}
-	if cfg.RateLimitRPM != 60 {
-		t.Fatalf("RateLimitRPM = %d, want 60", cfg.RateLimitRPM)
-	}
+	require.EqualValuesf(t, 60, cfg.RateLimitRPM,
+		"RateLimitRPM = %d, want 60", cfg.RateLimitRPM)
+
 	if got, want := cfg.RateSources, []string{"cbr"}; len(got) != len(want) || got[0] != want[0] {
-		t.Fatalf("RateSources = %v, want %v", got, want)
+		require.FailNowf(t, "test failed", "RateSources = %v, want %v", got, want)
 	}
-	if cfg.CBRDailyURL != defaultCBRDailyURL {
-		t.Fatalf("CBRDailyURL = %q, want default", cfg.CBRDailyURL)
-	}
-	if cfg.FrankfurterBaseURL != defaultFrankfurterURL {
-		t.Fatalf("FrankfurterBaseURL = %q, want default", cfg.FrankfurterBaseURL)
-	}
-	if cfg.TBankRatesURL != defaultTBankRatesURL {
-		t.Fatalf("TBankRatesURL = %q, want default", cfg.TBankRatesURL)
-	}
-	if cfg.TBankRateCategory != defaultTBankCategory {
-		t.Fatalf("TBankRateCategory = %q, want default", cfg.TBankRateCategory)
-	}
+	require.EqualValuesf(t, defaultCBRDailyURL, cfg.CBRDailyURL,
+		"CBRDailyURL = %q, want default", cfg.CBRDailyURL)
+	require.EqualValuesf(t, defaultFrankfurterURL, cfg.FrankfurterBaseURL,
+		"FrankfurterBaseURL = %q, want default", cfg.FrankfurterBaseURL)
+	require.EqualValuesf(t, defaultTBankRatesURL, cfg.TBankRatesURL,
+		"TBankRatesURL = %q, want default", cfg.TBankRatesURL)
+	require.EqualValuesf(t, defaultTBankCategory, cfg.TBankRateCategory,
+		"TBankRateCategory = %q, want default", cfg.TBankRateCategory)
+
 }
 
 func TestLoadFromEnv(t *testing.T) {
@@ -93,52 +83,41 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("TBANK_RATE_CATEGORY", " C2CTransfers ")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"Load() error = %v", err)
+	require.EqualValuesf(t, ":9090", cfg.HTTPAddr,
+		"HTTPAddr = %q, want :9090", cfg.HTTPAddr)
+	require.EqualValuesf(t, 2*time.Second, cfg.ReadTimeout,
+		"ReadTimeout = %v, want 2s", cfg.ReadTimeout)
+	require.EqualValuesf(t, 3*time.Second, cfg.WriteTimeout,
+		"WriteTimeout = %v, want 3s", cfg.WriteTimeout)
+	require.EqualValuesf(t, 4*time.Second, cfg.ShutdownTimeout,
+		"ShutdownTimeout = %v, want 4s", cfg.ShutdownTimeout)
+	require.EqualValuesf(t, 45*time.Second, cfg.CacheTTL,
+		"CacheTTL = %v, want 45s", cfg.CacheTTL)
+	require.EqualValuesf(t, "postgres://user:pass@localhost:5432/rates?sslmode=disable", cfg.DatabaseURL,
+		"DatabaseURL = %q, want postgres URL", cfg.DatabaseURL)
+	require.EqualValuesf(t, 2*time.Minute, cfg.SchedulerInterval,
+		"SchedulerInterval = %v, want 2m", cfg.SchedulerInterval)
 
-	if cfg.HTTPAddr != ":9090" {
-		t.Fatalf("HTTPAddr = %q, want :9090", cfg.HTTPAddr)
-	}
-	if cfg.ReadTimeout != 2*time.Second {
-		t.Fatalf("ReadTimeout = %v, want 2s", cfg.ReadTimeout)
-	}
-	if cfg.WriteTimeout != 3*time.Second {
-		t.Fatalf("WriteTimeout = %v, want 3s", cfg.WriteTimeout)
-	}
-	if cfg.ShutdownTimeout != 4*time.Second {
-		t.Fatalf("ShutdownTimeout = %v, want 4s", cfg.ShutdownTimeout)
-	}
-	if cfg.CacheTTL != 45*time.Second {
-		t.Fatalf("CacheTTL = %v, want 45s", cfg.CacheTTL)
-	}
-	if cfg.DatabaseURL != "postgres://user:pass@localhost:5432/rates?sslmode=disable" {
-		t.Fatalf("DatabaseURL = %q, want postgres URL", cfg.DatabaseURL)
-	}
-	if cfg.SchedulerInterval != 2*time.Minute {
-		t.Fatalf("SchedulerInterval = %v, want 2m", cfg.SchedulerInterval)
-	}
 	if got, want := cfg.SchedulerCurrencies, []string{"USD", "EUR", "GBP"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Fatalf("SchedulerCurrencies = %v, want %v", got, want)
+		require.FailNowf(t, "test failed", "SchedulerCurrencies = %v, want %v", got, want)
 	}
-	if cfg.RateLimitRPM != 120 {
-		t.Fatalf("RateLimitRPM = %d, want 120", cfg.RateLimitRPM)
-	}
+	require.EqualValuesf(t, 120, cfg.RateLimitRPM,
+		"RateLimitRPM = %d, want 120", cfg.RateLimitRPM)
+
 	if got, want := cfg.RateSources, []string{"cbr", "tbank", "frankfurter", "mock"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] || got[3] != want[3] {
-		t.Fatalf("RateSources = %v, want %v", got, want)
+		require.FailNowf(t, "test failed", "RateSources = %v, want %v", got, want)
 	}
-	if cfg.CBRDailyURL != "https://example.test/cbr.xml" {
-		t.Fatalf("CBRDailyURL = %q, want custom URL", cfg.CBRDailyURL)
-	}
-	if cfg.FrankfurterBaseURL != "https://example.test/frankfurter" {
-		t.Fatalf("FrankfurterBaseURL = %q, want custom URL", cfg.FrankfurterBaseURL)
-	}
-	if cfg.TBankRatesURL != "https://example.test/tbank/rates" {
-		t.Fatalf("TBankRatesURL = %q, want custom URL", cfg.TBankRatesURL)
-	}
-	if cfg.TBankRateCategory != "C2CTransfers" {
-		t.Fatalf("TBankRateCategory = %q, want custom category", cfg.TBankRateCategory)
-	}
+	require.EqualValuesf(t, "https://example.test/cbr.xml", cfg.CBRDailyURL,
+		"CBRDailyURL = %q, want custom URL", cfg.CBRDailyURL)
+	require.EqualValuesf(t, "https://example.test/frankfurter", cfg.FrankfurterBaseURL,
+		"FrankfurterBaseURL = %q, want custom URL", cfg.FrankfurterBaseURL)
+	require.EqualValuesf(t, "https://example.test/tbank/rates", cfg.TBankRatesURL,
+		"TBankRatesURL = %q, want custom URL", cfg.TBankRatesURL)
+	require.EqualValuesf(t, "C2CTransfers", cfg.TBankRateCategory,
+		"TBankRateCategory = %q, want custom category", cfg.TBankRateCategory)
+
 }
 
 func TestLoadDeduplicatesSchedulerCurrenciesAfterNormalization(t *testing.T) {
@@ -153,12 +132,11 @@ func TestLoadDeduplicatesSchedulerCurrenciesAfterNormalization(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"Load() error = %v", err)
 
 	if got, want := cfg.SchedulerCurrencies, []string{"USD", "EUR"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("SchedulerCurrencies = %v, want %v", got, want)
+		require.FailNowf(t, "test failed", "SchedulerCurrencies = %v, want %v", got, want)
 	}
 }
 
@@ -174,19 +152,15 @@ func TestLoadTreatsWhitespaceOnlyScalarsAsDefaults(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", " ")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"Load() error = %v", err)
+	require.EqualValuesf(t, ":8080", cfg.HTTPAddr,
+		"HTTPAddr = %q, want :8080", cfg.HTTPAddr)
+	require.EqualValuesf(t, "", cfg.DatabaseURL,
+		"DatabaseURL = %q, want empty", cfg.DatabaseURL)
+	require.EqualValuesf(t, 60, cfg.RateLimitRPM,
+		"RateLimitRPM = %d, want 60", cfg.RateLimitRPM)
 
-	if cfg.HTTPAddr != ":8080" {
-		t.Fatalf("HTTPAddr = %q, want :8080", cfg.HTTPAddr)
-	}
-	if cfg.DatabaseURL != "" {
-		t.Fatalf("DatabaseURL = %q, want empty", cfg.DatabaseURL)
-	}
-	if cfg.RateLimitRPM != 60 {
-		t.Fatalf("RateLimitRPM = %d, want 60", cfg.RateLimitRPM)
-	}
 }
 
 func TestLoadCanonicalizesValidatedPort(t *testing.T) {
@@ -201,13 +175,11 @@ func TestLoadCanonicalizesValidatedPort(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"Load() error = %v", err)
+	require.EqualValuesf(t, ":8080", cfg.HTTPAddr,
+		"HTTPAddr = %q, want :8080", cfg.HTTPAddr)
 
-	if cfg.HTTPAddr != ":8080" {
-		t.Fatalf("HTTPAddr = %q, want :8080", cfg.HTTPAddr)
-	}
 }
 
 func TestLoadRejectsInvalidPort(t *testing.T) {
@@ -221,7 +193,7 @@ func TestLoadRejectsInvalidPort(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -236,7 +208,7 @@ func TestLoadRejectsOutOfRangePort(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -251,7 +223,7 @@ func TestLoadRejectsInvalidDuration(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -266,14 +238,13 @@ func TestLoadInvalidDurationPreservesIntegerParseError(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	_, err := Load()
-	if err == nil {
-		t.Fatal("Load() error = nil, want error")
-	}
+	require.Error(t, err,
+		"Load() error = nil, want error")
 
 	var numberErr *strconv.NumError
-	if !errors.As(err, &numberErr) {
-		t.Fatalf("Load() error = %v, want wrapped strconv.NumError", err)
-	}
+	require.Truef(t, errors.As(err, &numberErr),
+		"Load() error = %v, want wrapped strconv.NumError", err)
+
 }
 
 func TestLoadRejectsNonPositiveDuration(t *testing.T) {
@@ -287,7 +258,7 @@ func TestLoadRejectsNonPositiveDuration(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -302,7 +273,7 @@ func TestLoadRejectsEmptySchedulerCurrencies(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -317,9 +288,9 @@ func TestLoadRejectsInvalidSchedulerCurrency(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "")
 
 	_, err := Load()
-	if !errors.Is(err, domain.ErrInvalidCurrencyCode) {
-		t.Fatalf("Load() error = %v, want ErrInvalidCurrencyCode", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrInvalidCurrencyCode,
+		"Load() error = %v, want ErrInvalidCurrencyCode", err)
+
 }
 
 func TestLoadRejectsInvalidRateLimit(t *testing.T) {
@@ -333,7 +304,7 @@ func TestLoadRejectsInvalidRateLimit(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "none")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -348,7 +319,7 @@ func TestLoadRejectsNonPositiveRateLimit(t *testing.T) {
 	t.Setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "0")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -365,7 +336,7 @@ func TestLoadRejectsInvalidRateSource(t *testing.T) {
 	t.Setenv("RATE_SOURCES", "bank-web-scraping")
 
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+		require.FailNow(t, "test failed", "Load() error = nil, want error")
 	}
 }
 
@@ -383,11 +354,10 @@ func TestLoadSupportsLegacyRateSource(t *testing.T) {
 	t.Setenv("RATE_SOURCES", "")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"Load() error = %v", err)
 
 	if got, want := cfg.RateSources, []string{"mock"}; len(got) != len(want) || got[0] != want[0] {
-		t.Fatalf("RateSources = %v, want %v", got, want)
+		require.FailNowf(t, "test failed", "RateSources = %v, want %v", got, want)
 	}
 }

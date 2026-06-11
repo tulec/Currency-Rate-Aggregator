@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"currency-rate-aggregator/internal/bankclient"
 	"currency-rate-aggregator/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAggregatorFetchRatesSelectsBestRates(t *testing.T) {
@@ -26,25 +26,19 @@ func TestAggregatorFetchRatesSelectsBestRates(t *testing.T) {
 	aggregator.now = func() time.Time { return updatedAt }
 
 	result, err := aggregator.FetchRates(context.Background(), " usd ")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, "USD", result.Currency,
+		"Currency = %q, want USD", result.Currency)
+	require.EqualValuesf(t, "Bank A", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
+	require.EqualValuesf(t, "Bank B", result.BestSell.Bank,
+		"BestSell.Bank = %q, want Bank B", result.BestSell.Bank)
+	require.Lenf(t, result.Sources, 2,
+		"len(Sources) = %d, want 2", len(result.Sources))
+	require.Truef(t, result.UpdatedAt.Equal(updatedAt),
+		"UpdatedAt = %v, want %v", result.UpdatedAt, updatedAt)
 
-	if result.Currency != "USD" {
-		t.Fatalf("Currency = %q, want USD", result.Currency)
-	}
-	if result.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
-	}
-	if result.BestSell.Bank != "Bank B" {
-		t.Fatalf("BestSell.Bank = %q, want Bank B", result.BestSell.Bank)
-	}
-	if len(result.Sources) != 2 {
-		t.Fatalf("len(Sources) = %d, want 2", len(result.Sources))
-	}
-	if !result.UpdatedAt.Equal(updatedAt) {
-		t.Fatalf("UpdatedAt = %v, want %v", result.UpdatedAt, updatedAt)
-	}
 }
 
 func TestAggregatorFetchRatesReturnsPartialDataWhenBankFails(t *testing.T) {
@@ -54,16 +48,13 @@ func TestAggregatorFetchRatesReturnsPartialDataWhenBankFails(t *testing.T) {
 	))
 
 	result, err := aggregator.FetchRates(context.Background(), "EUR")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, "Bank A", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
+	require.Lenf(t, result.Sources, 1,
+		"len(Sources) = %d, want 1", len(result.Sources))
 
-	if result.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
-	}
-	if len(result.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
-	}
 }
 
 func TestAggregatorFetchRatesAggregatesConfiguredMultipleSources(t *testing.T) {
@@ -86,25 +77,21 @@ func TestAggregatorFetchRatesAggregatesConfiguredMultipleSources(t *testing.T) {
 		FrankfurterBaseURL: server.URL + "/v2",
 		TBankRatesURL:      server.URL + "/tbank/rates",
 	})
-	if err != nil {
-		t.Fatalf("NewClients() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"NewClients() error = %v", err)
+
 	aggregator := NewAggregator(clients)
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.Lenf(t, result.Sources, 5,
+		"sources = %d, want 5 successful sources", len(result.Sources))
+	require.EqualValuesf(t, "North Bank", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want North Bank", result.BestBuy.Bank)
+	require.EqualValuesf(t, "Bank of Russia", result.BestSell.Bank,
+		"BestSell.Bank = %q, want Bank of Russia", result.BestSell.Bank)
 
-	if len(result.Sources) != 5 {
-		t.Fatalf("sources = %d, want 5 successful sources", len(result.Sources))
-	}
-	if result.BestBuy.Bank != "North Bank" {
-		t.Fatalf("BestBuy.Bank = %q, want North Bank", result.BestBuy.Bank)
-	}
-	if result.BestSell.Bank != "Bank of Russia" {
-		t.Fatalf("BestSell.Bank = %q, want Bank of Russia", result.BestSell.Bank)
-	}
 }
 
 func TestAggregatorFetchRatesWaitsForSuccessfulBankAfterFailure(t *testing.T) {
@@ -127,12 +114,12 @@ func TestAggregatorFetchRatesWaitsForSuccessfulBankAfterFailure(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for successful bank to start")
+		require.FailNow(t, "test failed", "timed out waiting for successful bank to start")
 	}
 
 	select {
 	case err := <-done:
-		t.Fatalf("FetchRates() finished before successful bank responded: %v", err)
+		require.FailNowf(t, "test failed", "FetchRates() finished before successful bank responded: %v", err)
 	case <-time.After(25 * time.Millisecond):
 	}
 
@@ -141,10 +128,10 @@ func TestAggregatorFetchRatesWaitsForSuccessfulBankAfterFailure(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("FetchRates() error = %v", err)
+			require.FailNowf(t, "test failed", "FetchRates() error = %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for FetchRates")
+		require.FailNow(t, "test failed", "timed out waiting for FetchRates")
 	}
 }
 
@@ -156,22 +143,17 @@ func TestAggregatorFetchRatesSkipsUnexpectedSourceCurrency(t *testing.T) {
 	}).WithMetrics(metrics)
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.Lenf(t, result.Sources, 1,
+		"len(Sources) = %d, want 1", len(result.Sources))
+	require.EqualValuesf(t, "Bank A", result.Sources[0].Bank,
+		"source bank = %q, want Bank A", result.Sources[0].Bank)
+	require.EqualValuesf(t, "USD", result.Sources[0].Currency,
+		"source currency = %q, want USD", result.Sources[0].Currency)
+	require.EqualValuesf(t, 1, metrics.bankErrors["Wrong Bank"],
+		"bank error metrics = %d, want 1", metrics.bankErrors["Wrong Bank"])
 
-	if len(result.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
-	}
-	if result.Sources[0].Bank != "Bank A" {
-		t.Fatalf("source bank = %q, want Bank A", result.Sources[0].Bank)
-	}
-	if result.Sources[0].Currency != "USD" {
-		t.Fatalf("source currency = %q, want USD", result.Sources[0].Currency)
-	}
-	if metrics.bankErrors["Wrong Bank"] != 1 {
-		t.Fatalf("bank error metrics = %d, want 1", metrics.bankErrors["Wrong Bank"])
-	}
 }
 
 func TestAggregatorFetchRatesNormalizesSourceTimestampsToUTC(t *testing.T) {
@@ -182,22 +164,17 @@ func TestAggregatorFetchRatesNormalizesSourceTimestampsToUTC(t *testing.T) {
 	})
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, time.UTC, result.Sources[0].FetchedAt.Location(),
+		"source FetchedAt location = %v, want UTC", result.Sources[0].FetchedAt.Location())
+	require.Truef(t, result.Sources[0].FetchedAt.Equal(fetchedAt),
+		"source FetchedAt = %v, want same instant as %v", result.Sources[0].FetchedAt, fetchedAt)
+	require.EqualValuesf(t, time.UTC, result.BestBuy.FetchedAt.Location(),
+		"best buy FetchedAt location = %v, want UTC", result.BestBuy.FetchedAt.Location())
+	require.EqualValuesf(t, time.UTC, result.BestSell.FetchedAt.Location(),
+		"best sell FetchedAt location = %v, want UTC", result.BestSell.FetchedAt.Location())
 
-	if result.Sources[0].FetchedAt.Location() != time.UTC {
-		t.Fatalf("source FetchedAt location = %v, want UTC", result.Sources[0].FetchedAt.Location())
-	}
-	if !result.Sources[0].FetchedAt.Equal(fetchedAt) {
-		t.Fatalf("source FetchedAt = %v, want same instant as %v", result.Sources[0].FetchedAt, fetchedAt)
-	}
-	if result.BestBuy.FetchedAt.Location() != time.UTC {
-		t.Fatalf("best buy FetchedAt location = %v, want UTC", result.BestBuy.FetchedAt.Location())
-	}
-	if result.BestSell.FetchedAt.Location() != time.UTC {
-		t.Fatalf("best sell FetchedAt location = %v, want UTC", result.BestSell.FetchedAt.Location())
-	}
 }
 
 func TestAggregatorFetchRatesReturnsNoRatesWhenSourcesUseWrongCurrency(t *testing.T) {
@@ -206,12 +183,11 @@ func TestAggregatorFetchRatesReturnsNoRatesWhenSourcesUseWrongCurrency(t *testin
 	})
 
 	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, ErrNoRatesAvailable) {
-		t.Fatalf("FetchRates() error = %v, want ErrNoRatesAvailable", err)
-	}
-	if !errors.Is(err, errUnexpectedCurrency) {
-		t.Fatalf("FetchRates() error = %v, want errUnexpectedCurrency", err)
-	}
+	require.ErrorIsf(t, err, ErrNoRatesAvailable,
+		"FetchRates() error = %v, want ErrNoRatesAvailable", err)
+	require.ErrorIsf(t, err, errUnexpectedCurrency,
+		"FetchRates() error = %v, want errUnexpectedCurrency", err)
+
 }
 
 func TestAggregatorFetchRatesIgnoresNilClients(t *testing.T) {
@@ -222,25 +198,22 @@ func TestAggregatorFetchRatesIgnoresNilClients(t *testing.T) {
 	aggregator := NewAggregator(clients)
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.Lenf(t, result.Sources, 1,
+		"len(Sources) = %d, want 1", len(result.Sources))
+	require.EqualValuesf(t, "Bank A", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
 
-	if len(result.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
-	}
-	if result.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
-	}
 }
 
 func TestAggregatorFetchRatesReturnsNoRatesWhenOnlyNilClientsExist(t *testing.T) {
 	aggregator := NewAggregator([]bankclient.BankClient{nil})
 
 	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, ErrNoRatesAvailable) {
-		t.Fatalf("FetchRates() error = %v, want ErrNoRatesAvailable", err)
-	}
+	require.ErrorIsf(t, err, ErrNoRatesAvailable,
+		"FetchRates() error = %v, want ErrNoRatesAvailable", err)
+
 }
 
 func TestAggregatorFetchRatesReturnsNoRatesWhenOnlyTypedNilClientsExist(t *testing.T) {
@@ -248,9 +221,9 @@ func TestAggregatorFetchRatesReturnsNoRatesWhenOnlyTypedNilClientsExist(t *testi
 	aggregator := NewAggregator([]bankclient.BankClient{typedNil})
 
 	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, ErrNoRatesAvailable) {
-		t.Fatalf("FetchRates() error = %v, want ErrNoRatesAvailable", err)
-	}
+	require.ErrorIsf(t, err, ErrNoRatesAvailable,
+		"FetchRates() error = %v, want ErrNoRatesAvailable", err)
+
 }
 
 func TestAggregatorFetchRatesIgnoresTypedNilCacheAndStore(t *testing.T) {
@@ -262,12 +235,11 @@ func TestAggregatorFetchRatesIgnoresTypedNilCacheAndStore(t *testing.T) {
 	), typedNilCache, typedNilStore)
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
-	if result.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, "Bank A", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
+
 }
 
 func TestAggregatorFetchRatesIgnoresTypedNilMetrics(t *testing.T) {
@@ -278,12 +250,11 @@ func TestAggregatorFetchRatesIgnoresTypedNilMetrics(t *testing.T) {
 	), &fakeRateCache{}).WithMetrics(typedNilMetrics)
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
-	if len(result.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.Lenf(t, result.Sources, 1,
+		"len(Sources) = %d, want 1", len(result.Sources))
+
 }
 
 func TestAggregatorFetchRatesReturnsErrorWhenAllBanksFail(t *testing.T) {
@@ -293,12 +264,11 @@ func TestAggregatorFetchRatesReturnsErrorWhenAllBanksFail(t *testing.T) {
 	))
 
 	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, ErrNoRatesAvailable) {
-		t.Fatalf("FetchRates() error = %v, want ErrNoRatesAvailable", err)
-	}
-	if !errors.Is(err, domain.ErrBankUnavailable) {
-		t.Fatalf("FetchRates() error = %v, want ErrBankUnavailable in chain", err)
-	}
+	require.ErrorIsf(t, err, ErrNoRatesAvailable,
+		"FetchRates() error = %v, want ErrNoRatesAvailable", err)
+	require.ErrorIsf(t, err, domain.ErrBankUnavailable,
+		"FetchRates() error = %v, want ErrBankUnavailable in chain", err)
+
 }
 
 func TestAggregatorFetchRatesRunsClientsInParallel(t *testing.T) {
@@ -322,12 +292,12 @@ func TestAggregatorFetchRatesRunsClientsInParallel(t *testing.T) {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for clients to start")
+			require.FailNow(t, "test failed", "timed out waiting for clients to start")
 		}
 	}
 
 	if got := atomic.LoadInt32(&maxInFlight); got != 2 {
-		t.Fatalf("max in-flight clients = %d, want 2", got)
+		require.FailNowf(t, "test failed", "max in-flight clients = %d, want 2", got)
 	}
 
 	close(release)
@@ -335,10 +305,10 @@ func TestAggregatorFetchRatesRunsClientsInParallel(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("FetchRates() error = %v", err)
+			require.FailNowf(t, "test failed", "FetchRates() error = %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for FetchRates")
+		require.FailNow(t, "test failed", "timed out waiting for FetchRates")
 	}
 }
 
@@ -362,7 +332,7 @@ func TestAggregatorFetchRatesStopsOnContextCancellation(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for client to start")
+		require.FailNow(t, "test failed", "timed out waiting for client to start")
 	}
 
 	cancel()
@@ -370,10 +340,10 @@ func TestAggregatorFetchRatesStopsOnContextCancellation(t *testing.T) {
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("FetchRates() error = %v, want context.Canceled", err)
+			require.FailNowf(t, "test failed", "FetchRates() error = %v, want context.Canceled", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for FetchRates cancellation")
+		require.FailNow(t, "test failed", "timed out waiting for FetchRates cancellation")
 	}
 }
 
@@ -385,18 +355,15 @@ func TestAggregatorFetchRatesReturnsPartialDataWhenClientReturnsContextError(t *
 	)).WithMetrics(metrics)
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
-	if result.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
-	}
-	if len(result.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
-	}
-	if metrics.bankErrors["Canceled Bank"] != 1 {
-		t.Fatalf("bank error metrics = %d, want 1", metrics.bankErrors["Canceled Bank"])
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, "Bank A", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
+	require.Lenf(t, result.Sources, 1,
+		"len(Sources) = %d, want 1", len(result.Sources))
+	require.EqualValuesf(t, 1, metrics.bankErrors["Canceled Bank"],
+		"bank error metrics = %d, want 1", metrics.bankErrors["Canceled Bank"])
+
 }
 
 func TestAggregatorFetchRatesReturnsPartialDataWhenClientDeadlineExpires(t *testing.T) {
@@ -406,15 +373,13 @@ func TestAggregatorFetchRatesReturnsPartialDataWhenClientDeadlineExpires(t *test
 	))
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
-	if result.BestBuy.Bank != "Bank A" {
-		t.Fatalf("BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
-	}
-	if len(result.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(result.Sources))
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, "Bank A", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Bank A", result.BestBuy.Bank)
+	require.Lenf(t, result.Sources, 1,
+		"len(Sources) = %d, want 1", len(result.Sources))
+
 }
 
 func TestAggregatorFetchRatesValidatesCurrency(t *testing.T) {
@@ -423,9 +388,9 @@ func TestAggregatorFetchRatesValidatesCurrency(t *testing.T) {
 	))
 
 	_, err := aggregator.FetchRates(context.Background(), "USDT")
-	if !errors.Is(err, domain.ErrInvalidCurrencyCode) {
-		t.Fatalf("FetchRates() error = %v, want ErrInvalidCurrencyCode", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrInvalidCurrencyCode,
+		"FetchRates() error = %v, want ErrInvalidCurrencyCode", err)
+
 }
 
 func TestAggregatorFetchRatesUsesCachedResult(t *testing.T) {
@@ -440,19 +405,15 @@ func TestAggregatorFetchRatesUsesCachedResult(t *testing.T) {
 	), cache)
 
 	result, err := aggregator.FetchRates(context.Background(), " usd ")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, "Cached Bank", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Cached Bank", result.BestBuy.Bank)
+	require.EqualValuesf(t, "USD", cache.getCurrency,
+		"cache get currency = %q, want USD", cache.getCurrency)
+	require.EqualValuesf(t, "", cache.setCurrency,
+		"cache set currency = %q, want empty", cache.setCurrency)
 
-	if result.BestBuy.Bank != "Cached Bank" {
-		t.Fatalf("BestBuy.Bank = %q, want Cached Bank", result.BestBuy.Bank)
-	}
-	if cache.getCurrency != "USD" {
-		t.Fatalf("cache get currency = %q, want USD", cache.getCurrency)
-	}
-	if cache.setCurrency != "" {
-		t.Fatalf("cache set currency = %q, want empty", cache.setCurrency)
-	}
 }
 
 func TestAggregatorRefreshRatesBypassesCachedResult(t *testing.T) {
@@ -467,22 +428,17 @@ func TestAggregatorRefreshRatesBypassesCachedResult(t *testing.T) {
 	), cache)
 
 	result, err := aggregator.RefreshRates(context.Background(), " usd ")
-	if err != nil {
-		t.Fatalf("RefreshRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"RefreshRates() error = %v", err)
+	require.EqualValuesf(t, "Fresh Bank", result.BestBuy.Bank,
+		"BestBuy.Bank = %q, want Fresh Bank", result.BestBuy.Bank)
+	require.EqualValuesf(t, "", cache.getCurrency,
+		"cache get currency = %q, want empty", cache.getCurrency)
+	require.EqualValuesf(t, "USD", cache.setCurrency,
+		"cache set currency = %q, want USD", cache.setCurrency)
+	require.EqualValuesf(t, "Fresh Bank", cache.stored.BestBuy.Bank,
+		"cached best buy bank = %q, want Fresh Bank", cache.stored.BestBuy.Bank)
 
-	if result.BestBuy.Bank != "Fresh Bank" {
-		t.Fatalf("BestBuy.Bank = %q, want Fresh Bank", result.BestBuy.Bank)
-	}
-	if cache.getCurrency != "" {
-		t.Fatalf("cache get currency = %q, want empty", cache.getCurrency)
-	}
-	if cache.setCurrency != "USD" {
-		t.Fatalf("cache set currency = %q, want USD", cache.setCurrency)
-	}
-	if cache.stored.BestBuy.Bank != "Fresh Bank" {
-		t.Fatalf("cached best buy bank = %q, want Fresh Bank", cache.stored.BestBuy.Bank)
-	}
 }
 
 func TestAggregatorFetchRatesObservesCacheHit(t *testing.T) {
@@ -497,15 +453,13 @@ func TestAggregatorFetchRatesObservesCacheHit(t *testing.T) {
 	), &fakeRateCache{result: cached, ok: true}).WithMetrics(metrics)
 
 	if _, err := aggregator.FetchRates(context.Background(), "usd"); err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
+		require.FailNowf(t, "test failed", "FetchRates() error = %v", err)
 	}
+	require.EqualValuesf(t, 1, metrics.cacheHits["USD"],
+		"cache hit metrics = %d, want 1", metrics.cacheHits["USD"])
+	require.EqualValuesf(t, 0, metrics.cacheMisses["USD"],
+		"cache miss metrics = %d, want 0", metrics.cacheMisses["USD"])
 
-	if metrics.cacheHits["USD"] != 1 {
-		t.Fatalf("cache hit metrics = %d, want 1", metrics.cacheHits["USD"])
-	}
-	if metrics.cacheMisses["USD"] != 0 {
-		t.Fatalf("cache miss metrics = %d, want 0", metrics.cacheMisses["USD"])
-	}
 }
 
 func TestAggregatorFetchRatesStoresFetchedResultInCache(t *testing.T) {
@@ -515,16 +469,13 @@ func TestAggregatorFetchRatesStoresFetchedResultInCache(t *testing.T) {
 	), cache)
 
 	result, err := aggregator.FetchRates(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, "USD", cache.setCurrency,
+		"cache set currency = %q, want USD", cache.setCurrency)
+	require.EqualValuesf(t, result.BestBuy.Bank, cache.stored.BestBuy.Bank,
+		"cached best buy bank = %q, want %q", cache.stored.BestBuy.Bank, result.BestBuy.Bank)
 
-	if cache.setCurrency != "USD" {
-		t.Fatalf("cache set currency = %q, want USD", cache.setCurrency)
-	}
-	if cache.stored.BestBuy.Bank != result.BestBuy.Bank {
-		t.Fatalf("cached best buy bank = %q, want %q", cache.stored.BestBuy.Bank, result.BestBuy.Bank)
-	}
 }
 
 func TestAggregatorFetchRatesObservesCacheMissAndBankErrors(t *testing.T) {
@@ -535,15 +486,13 @@ func TestAggregatorFetchRatesObservesCacheMissAndBankErrors(t *testing.T) {
 	), &fakeRateCache{}).WithMetrics(metrics)
 
 	if _, err := aggregator.FetchRates(context.Background(), "usd"); err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
+		require.FailNowf(t, "test failed", "FetchRates() error = %v", err)
 	}
+	require.EqualValuesf(t, 1, metrics.cacheMisses["USD"],
+		"cache miss metrics = %d, want 1", metrics.cacheMisses["USD"])
+	require.EqualValuesf(t, 1, metrics.bankErrors["Offline Bank"],
+		"bank error metrics = %d, want 1", metrics.bankErrors["Offline Bank"])
 
-	if metrics.cacheMisses["USD"] != 1 {
-		t.Fatalf("cache miss metrics = %d, want 1", metrics.cacheMisses["USD"])
-	}
-	if metrics.bankErrors["Offline Bank"] != 1 {
-		t.Fatalf("bank error metrics = %d, want 1", metrics.bankErrors["Offline Bank"])
-	}
 }
 
 func TestAggregatorFetchRatesLogsBankErrors(t *testing.T) {
@@ -555,7 +504,7 @@ func TestAggregatorFetchRatesLogsBankErrors(t *testing.T) {
 	)).WithLogger(logger)
 
 	if _, err := aggregator.FetchRates(context.Background(), "usd"); err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
+		require.FailNowf(t, "test failed", "FetchRates() error = %v", err)
 	}
 
 	output := logs.String()
@@ -566,9 +515,9 @@ func TestAggregatorFetchRatesLogsBankErrors(t *testing.T) {
 		`currency=USD`,
 		`error="bank unavailable"`,
 	} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("log output missing %q:\n%s", want, output)
-		}
+		require.Containsf(t, output, want,
+			"log output missing %q:\n%s", want, output)
+
 	}
 }
 
@@ -580,20 +529,17 @@ func TestAggregatorFetchRatesSavesFetchedSources(t *testing.T) {
 	), nil, store)
 
 	result, err := aggregator.FetchRates(context.Background(), " usd ")
-	if err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRates() error = %v", err)
+	require.EqualValuesf(t, 1, store.calls,
+		"SaveRates calls = %d, want 1", store.calls)
+	require.Lenf(t, store.rates, len(result.Sources),
+		"saved rates = %d, want %d", len(store.rates), len(result.Sources))
 
-	if store.calls != 1 {
-		t.Fatalf("SaveRates calls = %d, want 1", store.calls)
-	}
-	if len(store.rates) != len(result.Sources) {
-		t.Fatalf("saved rates = %d, want %d", len(store.rates), len(result.Sources))
-	}
 	for _, rate := range store.rates {
-		if rate.Currency != "USD" {
-			t.Fatalf("saved currency = %q, want USD", rate.Currency)
-		}
+		require.EqualValuesf(t, "USD", rate.Currency,
+			"saved currency = %q, want USD", rate.Currency)
+
 	}
 }
 
@@ -606,12 +552,11 @@ func TestAggregatorFetchRatesReturnsErrorWhenSavingFails(t *testing.T) {
 	), cache, store)
 
 	_, err := aggregator.FetchRates(context.Background(), "USD")
-	if !errors.Is(err, saveErr) {
-		t.Fatalf("FetchRates() error = %v, want save error", err)
-	}
-	if cache.setCurrency != "" {
-		t.Fatalf("cache set currency = %q, want empty after save failure", cache.setCurrency)
-	}
+	require.ErrorIsf(t, err, saveErr,
+		"FetchRates() error = %v, want save error", err)
+	require.EqualValuesf(t, "", cache.setCurrency,
+		"cache set currency = %q, want empty after save failure", cache.setCurrency)
+
 }
 
 func TestAggregatorFetchRatesDoesNotSaveCachedResult(t *testing.T) {
@@ -629,12 +574,11 @@ func TestAggregatorFetchRatesDoesNotSaveCachedResult(t *testing.T) {
 	), cache, store)
 
 	if _, err := aggregator.FetchRates(context.Background(), "USD"); err != nil {
-		t.Fatalf("FetchRates() error = %v", err)
+		require.FailNowf(t, "test failed", "FetchRates() error = %v", err)
 	}
+	require.EqualValuesf(t, 0, store.calls,
+		"SaveRates calls = %d, want 0 for cached result", store.calls)
 
-	if store.calls != 0 {
-		t.Fatalf("SaveRates calls = %d, want 0 for cached result", store.calls)
-	}
 }
 
 type testClient struct {

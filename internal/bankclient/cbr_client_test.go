@@ -2,13 +2,13 @@ package bankclient
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"currency-rate-aggregator/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCBRClientFetchRate(t *testing.T) {
@@ -28,23 +28,19 @@ func TestCBRClientFetchRate(t *testing.T) {
 
 	client := NewCBRClient(server.URL, server.Client())
 	rate, err := client.FetchRate(context.Background(), " usd ")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.EqualValuesf(t, "USD", rate.Currency,
+		"Currency = %q, want USD", rate.Currency)
+	require.EqualValuesf(t, cbrBankName, rate.Bank,
+		"Bank = %q, want %s", rate.Bank, cbrBankName)
+	require.Falsef(t, rate.Buy != 74.2956 || rate.Sell != 74.2956,
+		"Buy/Sell = %v/%v, want 74.2956/74.2956", rate.Buy, rate.Sell)
 
-	if rate.Currency != "USD" {
-		t.Fatalf("Currency = %q, want USD", rate.Currency)
-	}
-	if rate.Bank != cbrBankName {
-		t.Fatalf("Bank = %q, want %s", rate.Bank, cbrBankName)
-	}
-	if rate.Buy != 74.2956 || rate.Sell != 74.2956 {
-		t.Fatalf("Buy/Sell = %v/%v, want 74.2956/74.2956", rate.Buy, rate.Sell)
-	}
 	wantFetchedAt := time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC)
-	if !rate.FetchedAt.Equal(wantFetchedAt) {
-		t.Fatalf("FetchedAt = %v, want %v", rate.FetchedAt, wantFetchedAt)
-	}
+	require.Truef(t, rate.FetchedAt.Equal(wantFetchedAt),
+		"FetchedAt = %v, want %v", rate.FetchedAt, wantFetchedAt)
+
 }
 
 func TestCBRClientFetchRateUsesNominalWhenUnitRateMissing(t *testing.T) {
@@ -55,13 +51,11 @@ func TestCBRClientFetchRateUsesNominalWhenUnitRateMissing(t *testing.T) {
 
 	client := NewCBRClient(server.URL, server.Client())
 	rate, err := client.FetchRate(context.Background(), "KZT")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.Falsef(t, rate.Buy != 0.135 || rate.Sell != 0.135,
+		"Buy/Sell = %v/%v, want 0.135/0.135", rate.Buy, rate.Sell)
 
-	if rate.Buy != 0.135 || rate.Sell != 0.135 {
-		t.Fatalf("Buy/Sell = %v/%v, want 0.135/0.135", rate.Buy, rate.Sell)
-	}
 }
 
 func TestCBRClientFetchRateSupportsWindows1251XML(t *testing.T) {
@@ -73,13 +67,11 @@ func TestCBRClientFetchRateSupportsWindows1251XML(t *testing.T) {
 
 	client := NewCBRClient(server.URL, server.Client())
 	rate, err := client.FetchRate(context.Background(), "USD")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.EqualValuesf(t, 74.2956, rate.Buy,
+		"Buy = %v, want 74.2956", rate.Buy)
 
-	if rate.Buy != 74.2956 {
-		t.Fatalf("Buy = %v, want 74.2956", rate.Buy)
-	}
 }
 
 func TestCBRClientFetchRateReturnsRubBaseRate(t *testing.T) {
@@ -88,16 +80,13 @@ func TestCBRClientFetchRateReturnsRubBaseRate(t *testing.T) {
 	client.now = func() time.Time { return now }
 
 	rate, err := client.FetchRate(context.Background(), "rub")
-	if err != nil {
-		t.Fatalf("FetchRate() error = %v", err)
-	}
+	require.NoErrorf(t, err,
+		"FetchRate() error = %v", err)
+	require.Falsef(t, rate.Currency != "RUB" || rate.Buy != 1 || rate.Sell != 1,
+		"rate = %+v, want RUB 1/1", rate)
+	require.Truef(t, rate.FetchedAt.Equal(now),
+		"FetchedAt = %v, want %v", rate.FetchedAt, now)
 
-	if rate.Currency != "RUB" || rate.Buy != 1 || rate.Sell != 1 {
-		t.Fatalf("rate = %+v, want RUB 1/1", rate)
-	}
-	if !rate.FetchedAt.Equal(now) {
-		t.Fatalf("FetchedAt = %v, want %v", rate.FetchedAt, now)
-	}
 }
 
 func TestCBRClientFetchRateReturnsCurrencyNotFound(t *testing.T) {
@@ -108,9 +97,9 @@ func TestCBRClientFetchRateReturnsCurrencyNotFound(t *testing.T) {
 
 	client := NewCBRClient(server.URL, server.Client())
 	_, err := client.FetchRate(context.Background(), "EUR")
-	if !errors.Is(err, domain.ErrCurrencyNotFound) {
-		t.Fatalf("FetchRate() error = %v, want ErrCurrencyNotFound", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrCurrencyNotFound,
+		"FetchRate() error = %v, want ErrCurrencyNotFound", err)
+
 }
 
 func TestCBRClientFetchRateReportsHTTPErrorAsBankUnavailable(t *testing.T) {
@@ -121,9 +110,9 @@ func TestCBRClientFetchRateReportsHTTPErrorAsBankUnavailable(t *testing.T) {
 
 	client := NewCBRClient(server.URL, server.Client())
 	_, err := client.FetchRate(context.Background(), "USD")
-	if !errors.Is(err, domain.ErrBankUnavailable) {
-		t.Fatalf("FetchRate() error = %v, want ErrBankUnavailable", err)
-	}
+	require.ErrorIsf(t, err, domain.ErrBankUnavailable,
+		"FetchRate() error = %v, want ErrBankUnavailable", err)
+
 }
 
 func TestCBRClientFetchRateReportsMalformedResponse(t *testing.T) {
@@ -134,9 +123,9 @@ func TestCBRClientFetchRateReportsMalformedResponse(t *testing.T) {
 
 	client := NewCBRClient(server.URL, server.Client())
 	_, err := client.FetchRate(context.Background(), "USD")
-	if !errors.Is(err, errCBRMalformedResponse) {
-		t.Fatalf("FetchRate() error = %v, want malformed response", err)
-	}
+	require.ErrorIsf(t, err, errCBRMalformedResponse,
+		"FetchRate() error = %v, want malformed response", err)
+
 }
 
 func TestCBRClientRespectsContextCancellation(t *testing.T) {
@@ -145,7 +134,7 @@ func TestCBRClientRespectsContextCancellation(t *testing.T) {
 
 	client := NewCBRClient("http://127.0.0.1/not-used", nil)
 	_, err := client.FetchRate(ctx, "USD")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("FetchRate() error = %v, want context.Canceled", err)
-	}
+	require.ErrorIsf(t, err, context.Canceled,
+		"FetchRate() error = %v, want context.Canceled", err)
+
 }
